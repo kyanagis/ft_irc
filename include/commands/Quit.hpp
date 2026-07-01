@@ -1,9 +1,9 @@
-#ifndef PING_COMMAND_H
-#define PING_COMMAND_H
+#ifndef QUIT_COMMAND_H
+#define QUIT_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class PingCommand : public ACommand
+class QuitCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

@@ -1,9 +1,9 @@
-#ifndef PART_COMMAND_H
-#define PART_COMMAND_H
+#ifndef NOTICE_COMMAND_H
+#define NOTICE_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class PartCommand : public ACommand
+class NoticeCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

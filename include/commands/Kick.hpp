@@ -1,7 +1,7 @@
 #ifndef KICK_COMMAND_H
 #define KICK_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
 class KickCommand : public ACommand
 {

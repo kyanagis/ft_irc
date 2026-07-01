@@ -1,9 +1,9 @@
-#ifndef NOTICE_COMMAND_H
-#define NOTICE_COMMAND_H
+#ifndef INVITE_COMMAND_H
+#define INVITE_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class NoticeCommand : public ACommand
+class InviteCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

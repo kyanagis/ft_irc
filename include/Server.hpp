@@ -7,8 +7,8 @@
 #include <csignal>
 #include <poll.h>
 
-#include "Socket.h"
-#include "CommandDispatcher.h"
+#include "Socket.hpp"
+#include "CommandDispatcher.hpp"
 
 class Client;
 class Channel;

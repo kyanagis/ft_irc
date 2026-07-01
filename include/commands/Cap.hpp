@@ -1,9 +1,9 @@
-#ifndef USER_COMMAND_H
-#define USER_COMMAND_H
+#ifndef CAP_COMMAND_H
+#define CAP_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class UserCommand : public ACommand
+class CapCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

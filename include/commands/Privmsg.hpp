@@ -1,9 +1,9 @@
-#ifndef JOIN_COMMAND_H
-#define JOIN_COMMAND_H
+#ifndef PRIVMSG_COMMAND_H
+#define PRIVMSG_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class JoinCommand : public ACommand
+class PrivmsgCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

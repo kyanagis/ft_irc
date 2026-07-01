@@ -1,9 +1,9 @@
-#ifndef PASS_COMMAND_H
-#define PASS_COMMAND_H
+#ifndef JOIN_COMMAND_H
+#define JOIN_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class PassCommand : public ACommand
+class JoinCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);
