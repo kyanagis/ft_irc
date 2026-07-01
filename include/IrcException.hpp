@@ -1,5 +1,5 @@
-#ifndef IRC_EXCEPTION_H
-#define IRC_EXCEPTION_H
+#ifndef IRC_EXCEPTION_HPP
+#define IRC_EXCEPTION_HPP
 
 #include <stdexcept>
 #include <string>

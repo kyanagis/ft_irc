@@ -1,5 +1,5 @@
-#ifndef QUIT_COMMAND_H
-#define QUIT_COMMAND_H
+#ifndef QUIT_COMMAND_HPP
+#define QUIT_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

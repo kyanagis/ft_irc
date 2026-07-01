@@ -1,5 +1,5 @@
-#ifndef PART_COMMAND_H
-#define PART_COMMAND_H
+#ifndef PART_COMMAND_HPP
+#define PART_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

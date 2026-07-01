@@ -1,5 +1,5 @@
-#ifndef SOCKET_H
-#define SOCKET_H
+#ifndef SOCKET_HPP
+#define SOCKET_HPP
 
 #include <string>
 
