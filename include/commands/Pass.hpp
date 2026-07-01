@@ -1,5 +1,5 @@
-#ifndef PASS_COMMAND_H
-#define PASS_COMMAND_H
+#ifndef PASS_COMMAND_HPP
+#define PASS_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

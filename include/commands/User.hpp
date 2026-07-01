@@ -1,5 +1,5 @@
-#ifndef USER_COMMAND_H
-#define USER_COMMAND_H
+#ifndef USER_COMMAND_HPP
+#define USER_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

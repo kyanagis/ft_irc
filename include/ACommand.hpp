@@ -1,5 +1,5 @@
-#ifndef ACOMMAND_H
-#define ACOMMAND_H
+#ifndef ACOMMAND_HPP
+#define ACOMMAND_HPP
 
 class Server;
 class Client;

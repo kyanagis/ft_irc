@@ -1,5 +1,5 @@
-#ifndef REPLY_H
-#define REPLY_H
+#ifndef REPLY_HPP
+#define REPLY_HPP
 
 #include <string>
 

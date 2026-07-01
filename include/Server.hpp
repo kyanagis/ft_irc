@@ -1,5 +1,5 @@
-#ifndef SERVER_H
-#define SERVER_H
+#ifndef SERVER_HPP
+#define SERVER_HPP
 
 #include <map>
 #include <vector>
