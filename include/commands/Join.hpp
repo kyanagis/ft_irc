@@ -1,5 +1,5 @@
-#ifndef JOIN_COMMAND_H
-#define JOIN_COMMAND_H
+#ifndef JOIN_COMMAND_HPP
+#define JOIN_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

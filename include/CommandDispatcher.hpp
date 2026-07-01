@@ -1,5 +1,5 @@
-#ifndef COMMAND_DISPATCHER_H
-#define COMMAND_DISPATCHER_H
+#ifndef COMMAND_DISPATCHER_HPP
+#define COMMAND_DISPATCHER_HPP
 
 #include <map>
 #include <string>

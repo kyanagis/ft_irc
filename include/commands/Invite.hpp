@@ -1,5 +1,5 @@
-#ifndef INVITE_COMMAND_H
-#define INVITE_COMMAND_H
+#ifndef INVITE_COMMAND_HPP
+#define INVITE_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

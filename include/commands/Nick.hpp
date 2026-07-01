@@ -1,5 +1,5 @@
-#ifndef NICK_COMMAND_H
-#define NICK_COMMAND_H
+#ifndef NICK_COMMAND_HPP
+#define NICK_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

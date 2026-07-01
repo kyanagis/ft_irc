@@ -1,5 +1,5 @@
-#ifndef PING_COMMAND_H
-#define PING_COMMAND_H
+#ifndef PING_COMMAND_HPP
+#define PING_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

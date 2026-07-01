@@ -1,5 +1,5 @@
-#ifndef TOPIC_COMMAND_H
-#define TOPIC_COMMAND_H
+#ifndef TOPIC_COMMAND_HPP
+#define TOPIC_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

@@ -1,5 +1,5 @@
-#ifndef MODE_COMMAND_H
-#define MODE_COMMAND_H
+#ifndef MODE_COMMAND_HPP
+#define MODE_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

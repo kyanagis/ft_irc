@@ -1,5 +1,5 @@
-#ifndef CAP_COMMAND_H
-#define CAP_COMMAND_H
+#ifndef CAP_COMMAND_HPP
+#define CAP_COMMAND_HPP
 
 #include "../ACommand.hpp"
 
