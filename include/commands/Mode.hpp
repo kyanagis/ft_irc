@@ -1,9 +1,9 @@
-#ifndef TOPIC_COMMAND_H
-#define TOPIC_COMMAND_H
+#ifndef MODE_COMMAND_H
+#define MODE_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class TopicCommand : public ACommand
+class ModeCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

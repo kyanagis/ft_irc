@@ -1,9 +1,9 @@
-#ifndef CAP_COMMAND_H
-#define CAP_COMMAND_H
+#ifndef NICK_COMMAND_H
+#define NICK_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class CapCommand : public ACommand
+class NickCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

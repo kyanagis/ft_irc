@@ -1,9 +1,9 @@
-#ifndef NICK_COMMAND_H
-#define NICK_COMMAND_H
+#ifndef PASS_COMMAND_H
+#define PASS_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class NickCommand : public ACommand
+class PassCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

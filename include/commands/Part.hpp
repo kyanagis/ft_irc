@@ -1,9 +1,9 @@
-#ifndef MODE_COMMAND_H
-#define MODE_COMMAND_H
+#ifndef PART_COMMAND_H
+#define PART_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class ModeCommand : public ACommand
+class PartCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);

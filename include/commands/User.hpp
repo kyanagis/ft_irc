@@ -1,9 +1,9 @@
-#ifndef INVITE_COMMAND_H
-#define INVITE_COMMAND_H
+#ifndef USER_COMMAND_H
+#define USER_COMMAND_H
 
-#include "../ACommand.h"
+#include "../ACommand.hpp"
 
-class InviteCommand : public ACommand
+class UserCommand : public ACommand
 {
 public:
 	void execute(Server& server, Client& client, const Message& msg);
