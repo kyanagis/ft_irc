@@ -11,3 +11,7 @@ ircserv
 .vscode/
 .idea/
 
+# clangd / editor (local only, keep the dev push to source files)
+compile_flags.txt
+.cache/
+
