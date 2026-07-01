@@ -1,5 +1,5 @@
-#ifndef NOTICE_COMMAND_H
-#define NOTICE_COMMAND_H
+#ifndef NOTICE_COMMAND_HPP
+#define NOTICE_COMMAND_HPP
 
 #include "../ACommand.hpp"
 

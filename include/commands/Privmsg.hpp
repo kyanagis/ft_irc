@@ -1,5 +1,5 @@
-#ifndef PRIVMSG_COMMAND_H
-#define PRIVMSG_COMMAND_H
+#ifndef PRIVMSG_COMMAND_HPP
+#define PRIVMSG_COMMAND_HPP
 
 #include "../ACommand.hpp"
 
