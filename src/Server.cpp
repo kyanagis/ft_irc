@@ -160,7 +160,8 @@ void Server::acceptClient() {
 		}
 		catch (...) {
 			close(fd);
-			return;
+			fd = _listen.acceptClient(host);
+			continue;
 		}
 		_clients[fd] = client;
 		fd = _listen.acceptClient(host);
@@ -175,11 +176,20 @@ void Server::handleReadable(Client& client) {
 		n = recv(client.fd(), buf, sizeof(buf), 0);
 	}
 
-	if (n == 0) {
-		disconnect(client, "client closed connection");
+	pumpLines(client);
+
+	if (client.inputOverflow()) {
+		disconnect(client, "input line too long");
 		return;
 	}
-	pumpLines(client);
+	if (client.outputOverflow()) {
+		disconnect(client, "send queue exceeded");
+		return;
+	}
+
+	if (n == 0) {
+		disconnect(client, "client closed connection");
+	}
 }
 
 void Server::handleWritable(Client& client) {
@@ -191,6 +201,8 @@ void Server::handleWritable(Client& client) {
 	ssize_t n = send(client.fd(), out.c_str(), out.size(), 0);
 	if (n > 0) {
 		out.erase(0, static_cast<std::size_t>(n));
+	} else {
+		disconnect(client, "send failed");
 	}
 }
 

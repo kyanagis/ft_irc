@@ -35,6 +35,8 @@ public:
 	void         appendOutput(const std::string& raw);
 	std::string& outBuffer();
 	bool         hasPendingOutput() const;
+	bool         inputOverflow() const;
+	bool         outputOverflow() const;
 
 	void                         joinChannel(const std::string& name);
 	void                         leaveChannel(const std::string& name);
