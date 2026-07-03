@@ -1,5 +1,10 @@
 #include "Client.hpp"
 
+namespace {
+	const std::size_t MAX_INPUT_LINE = 512;
+	const std::size_t MAX_OUTPUT_QUEUE = 1024 * 1024;
+}
+
 Client::Client(int fd, const std::string& host)
 		: _fd(fd),
 			_host(host),
@@ -116,6 +121,15 @@ std::string& Client::outBuffer() {
 
 bool Client::hasPendingOutput() const {
 	return !_outBuf.empty();
+}
+
+bool Client::inputOverflow() const {
+	return _inBuf.size() > MAX_INPUT_LINE
+			&& _inBuf.find('\n') == std::string::npos;
+}
+
+bool Client::outputOverflow() const {
+	return _outBuf.size() > MAX_OUTPUT_QUEUE;
 }
 
 void Client::joinChannel(const std::string& name) {
