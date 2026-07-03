@@ -80,7 +80,10 @@ void Server::rebuildPollFds() {
 			it != _clients.end(); ++it) {
 		struct pollfd pfd;
 		pfd.fd = it->first;
-		pfd.events = POLLIN;
+		pfd.events = 0;
+		if (!it->second->isReadClosed()) {
+			pfd.events |= POLLIN;
+		}
 		if (it->second->hasPendingOutput()) {
 			pfd.events |= POLLOUT;
 		}
@@ -142,9 +145,15 @@ void Server::run() {
 				if (_clients.find(fd) == _clients.end()) {
 					continue;
 				}
+				if (client->isReadClosed() && !client->hasPendingOutput()) {
+					disconnect(*client, "client closed connection");
+					continue;
+				}
 			}
 			if (re & (POLLERR | POLLHUP | POLLNVAL)) {
-				disconnect(*client, "poll error/hangup");
+				if (!(client->isReadClosed() && client->hasPendingOutput())) {
+					disconnect(*client, "poll error/hangup");
+				}
 			}
 		}
 	}
@@ -188,7 +197,11 @@ void Server::handleReadable(Client& client) {
 	}
 
 	if (n == 0) {
-		disconnect(client, "client closed connection");
+		if (client.hasPendingOutput()) {
+			client.markReadClosed();
+		} else {
+			disconnect(client, "client closed connection");
+		}
 	}
 }
 
