@@ -17,6 +17,7 @@ Client::Client(int fd, const std::string& host)
 			_hasNick(false),
 			_hasUser(false),
 			_registered(false),
+			_readClosed(false),
 			_channels() {
 }
 
@@ -130,6 +131,14 @@ bool Client::inputOverflow() const {
 
 bool Client::outputOverflow() const {
 	return _outBuf.size() > MAX_OUTPUT_QUEUE;
+}
+
+void Client::markReadClosed() {
+	_readClosed = true;
+}
+
+bool Client::isReadClosed() const {
+	return _readClosed;
 }
 
 void Client::joinChannel(const std::string& name) {

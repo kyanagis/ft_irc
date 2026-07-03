@@ -37,6 +37,8 @@ public:
 	bool         hasPendingOutput() const;
 	bool         inputOverflow() const;
 	bool         outputOverflow() const;
+	void         markReadClosed();
+	bool         isReadClosed() const;
 
 	void                         joinChannel(const std::string& name);
 	void                         leaveChannel(const std::string& name);
@@ -57,6 +59,7 @@ private:
 	bool                  _hasNick;
 	bool                  _hasUser;
 	bool                  _registered;
+	bool                  _readClosed;
 	std::set<std::string> _channels;
 };
 
