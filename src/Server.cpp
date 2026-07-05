@@ -5,6 +5,7 @@
 #include <csignal>
 #include <cstddef>
 #include <cstring>
+#include <ctime>
 
 #include <stdexcept>
 
@@ -40,6 +41,13 @@ Server::Server(int port, const std::string& password)
 			_channels(),
 			_pollfds(),
 			_dispatcher() {
+	std::time_t now = std::time(0);
+	std::tm* tmv = std::localtime(&now);
+	char buf[64];
+	if (tmv != 0
+			&& std::strftime(buf, sizeof(buf), "%a %b %d %Y %H:%M:%S", tmv) > 0) {
+		_createdAt = buf;
+	}
 }
 
 Server::~Server() {
