@@ -16,6 +16,7 @@ SRCS      := \
 	$(SRCDIR)/Server.cpp \
 	$(SRCDIR)/Client.cpp \
 	$(SRCDIR)/Socket.cpp \
+	$(SRCDIR)/Message.cpp \
 	$(SRCDIR)/CommandDispatcher.cpp
 
 OBJS      := $(SRCS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
