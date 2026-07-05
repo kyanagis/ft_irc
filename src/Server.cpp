@@ -1,5 +1,6 @@
 #include "Server.hpp"
 
+#include <cctype>
 #include <cerrno>
 #include <csignal>
 #include <cstddef>
@@ -15,6 +16,16 @@
 
 namespace {
 	const std::size_t READ_CHUNK = 4096;
+
+	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
+	std::string lowerAscii(const std::string& s) {
+		std::string r(s);
+		for (std::string::size_type i = 0; i < r.size(); ++i) {
+			r[i] = static_cast<char>(
+					std::tolower(static_cast<unsigned char>(r[i])));
+		}
+		return r;
+	}
 }
 
 volatile sig_atomic_t Server::_running = 0;
@@ -44,6 +55,45 @@ Server::~Server() {
 		delete it->second;
 	}
 	_channels.clear();
+}
+
+Client* Server::findClientByNick(const std::string& nick) {
+	std::string key = lowerAscii(nick);
+	for (std::map<int, Client*>::iterator it = _clients.begin();
+			it != _clients.end(); ++it) {
+		if (it->second->hasNick() && lowerAscii(it->second->nick()) == key) {
+			return it->second;
+		}
+	}
+	return 0;
+}
+
+Channel* Server::findChannel(const std::string& name) {
+	std::map<std::string, Channel*>::iterator it =
+			_channels.find(lowerAscii(name));
+	if (it == _channels.end()) {
+		return 0;
+	}
+	return it->second;
+}
+
+Channel* Server::getOrCreateChannel(const std::string& name, Client& creator) {
+	std::string key = lowerAscii(name);
+	std::map<std::string, Channel*>::iterator it = _channels.find(key);
+	if (it != _channels.end()) {
+		return it->second;
+	}
+	Channel* channel = new Channel(name, creator);
+	_channels[key] = channel;
+	return channel;
+}
+
+void Server::removeEmptyChannel(Channel* channel) {
+	if (channel == 0 || !channel->isEmpty()) {
+		return;
+	}
+	_channels.erase(lowerAscii(channel->name()));
+	delete channel;
 }
 
 const std::string& Server::password() const {
