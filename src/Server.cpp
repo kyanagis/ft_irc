@@ -284,6 +284,19 @@ void Server::disconnect(Client& client, const std::string& reason) {
 	(void)reason;
 	int fd = client.fd();
 
+	// 参加中だけでなくinvitedのみのチャンネルにも生ポインタが残るので全走査
+	std::map<std::string, Channel*>::iterator it = _channels.begin();
+	while (it != _channels.end()) {
+		Channel* channel = it->second;
+		channel->removeMember(client);
+		if (channel->isEmpty()) {
+			delete channel;
+			_channels.erase(it++);
+		} else {
+			++it;
+		}
+	}
+
 	_clients.erase(fd);
 	close(fd);
 	delete &client;
