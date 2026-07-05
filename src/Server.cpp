@@ -12,6 +12,7 @@
 
 #include "Channel.hpp"
 #include "Client.hpp"
+#include "Message.hpp"
 
 namespace {
 	const std::size_t READ_CHUNK = 4096;
@@ -222,7 +223,11 @@ void Server::handleWritable(Client& client) {
 void Server::pumpLines(Client& client) {
 	std::string line;
 	while (client.extractLine(line)) {
-		queueMessage(client, line + "\r\n");
+		Message msg = Message::parse(line);
+		if (msg.empty()) {
+			continue;
+		}
+		_dispatcher.dispatch(*this, client, msg);
 	}
 }
 
