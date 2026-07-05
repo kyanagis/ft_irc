@@ -16,7 +16,13 @@ SRCS      := \
 	$(SRCDIR)/Server.cpp \
 	$(SRCDIR)/Client.cpp \
 	$(SRCDIR)/Socket.cpp \
-	$(SRCDIR)/CommandDispatcher.cpp
+	$(SRCDIR)/CommandDispatcher.cpp \
+	$(SRCDIR)/Channel/Channel.cpp \
+	$(SRCDIR)/Channel/Channel_broadcast.cpp \
+	$(SRCDIR)/Channel/Channel_invite.cpp \
+	$(SRCDIR)/Channel/Channel_members.cpp \
+	$(SRCDIR)/Channel/Channel_operator.cpp \
+	$(SRCDIR)/Channel/Channel_topic.cpp
 
 OBJS      := $(SRCS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
 DEPS      := $(OBJS:.o=.d)
@@ -26,11 +32,9 @@ all: $(NAME)
 $(NAME): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(INCLUDES) -c $< -o $@
-
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
 
 clean:
 	rm -rf $(OBJDIR)
