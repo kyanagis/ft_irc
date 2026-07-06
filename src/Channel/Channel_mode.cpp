@@ -57,15 +57,15 @@ std::string Channel::modeString() const {
 	std::string flags = "+";
 	std::string params;
 
-	if (_inviteOnly)
+	if (_inviteOnly == true)
 		flags += "i";
-	if (_topicLocked)
+	if (_topicLocked == true)
 		flags += "t";
-	if (_hasKey) {
+	if (_hasKey == true) {
 		flags += "k";
 		params += " " + _key;
 	}
-	if (_hasLimit) {
+	if (_hasLimit == true) {
 		flags += "l";
 		params += " " + StringUtil::toString(static_cast<long>(_limit));
 	}
