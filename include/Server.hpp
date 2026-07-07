@@ -27,6 +27,7 @@ public:
 	void     removeEmptyChannel(Channel* channel);
 	void     disconnect(Client& client, const std::string& reason);
 	void     queueMessage(Client& client, const std::string& message);
+	void     sendLine(Client& client, const std::string& line);
 
 	const std::string& password() const;
 	const std::string& serverName() const;
