@@ -1,6 +1,3 @@
-# ============================================================================
-#  ft_irc — ircserv
-# ============================================================================
 NAME      := ircserv
 
 CXX       := c++
@@ -10,15 +7,7 @@ INCLUDES  := -I include
 
 SRCDIR    := src
 OBJDIR    := obj
-
-SRCS      := \
-	$(SRCDIR)/main.cpp \
-	$(SRCDIR)/Server.cpp \
-	$(SRCDIR)/Client.cpp \
-	$(SRCDIR)/Socket.cpp \
-	$(SRCDIR)/Message.cpp \
-	$(SRCDIR)/Reply.cpp \
-	$(SRCDIR)/CommandDispatcher.cpp
+SRCS      := $(sort $(wildcard $(SRCDIR)/*.cpp) $(wildcard $(SRCDIR)/*/*.cpp))
 
 OBJS      := $(SRCS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
 DEPS      := $(OBJS:.o=.d)
@@ -28,11 +17,9 @@ all: $(NAME)
 $(NAME): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.cpp | $(OBJDIR)
+$(OBJDIR)/%.o: $(SRCDIR)/%.cpp
+	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(DEPFLAGS) $(INCLUDES) -c $< -o $@
-
-$(OBJDIR):
-	mkdir -p $(OBJDIR)
 
 clean:
 	rm -rf $(OBJDIR)
