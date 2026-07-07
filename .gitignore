@@ -3,6 +3,8 @@
 *.a
 *.so
 *.out
+*.d
+obj/
 ircserv
 
 .DS_Store
@@ -15,3 +17,7 @@ ircserv
 compile_flags.txt
 .cache/
 
+compile_commands.json
+
+# ローカル検証ハーネス（提出物に含めない）
+verify/
