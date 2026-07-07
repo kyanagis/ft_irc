@@ -18,6 +18,7 @@
 
 namespace {
 	const std::size_t READ_CHUNK = 4096;
+	const std::string IRC_CRLF = "\r\n";
 
 	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
 	std::string lowerAscii(const std::string& s) {
@@ -300,6 +301,11 @@ void Server::pumpLines(Client& client) {
 
 void Server::queueMessage(Client& client, const std::string& message) {
 	client.appendOutput(message);
+}
+
+// 1行をCRLF終端で送信キューへ積む。コマンドはこちらを使う（queueMessageは生バイト用）
+void Server::sendLine(Client& client, const std::string& line) {
+	client.appendOutput(line + IRC_CRLF);
 }
 
 void Server::disconnect(Client& client, const std::string& reason) {
