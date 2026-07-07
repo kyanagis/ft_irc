@@ -9,13 +9,6 @@
 #include "Reply.hpp"
 #include "Server.hpp"
 
-namespace {
-	// IRCの1行はCRLF終端。queueMessageは生追記なのでここで付ける
-	void send(Server& server, Client& client, const std::string& line) {
-		server.queueMessage(client, line + "\r\n");
-	}
-}
-
 CommandDispatcher::CommandDispatcher() {
 	// registerCommand("PASS", new PassCommand()) のようにコマンド担当がここで登録する
 	// 登録名は大文字（Message::parseがcommandを大文字化するため）
@@ -38,7 +31,7 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		const Message& msg) {
 	std::map<std::string, ACommand*>::iterator it = _table.find(msg.command());
 	if (it == _table.end()) {
-		send(server, client, Reply::numeric(server.serverName(),
+		server.sendLine(client, Reply::numeric(server.serverName(),
 				Reply::ERR_UNKNOWNCOMMAND, client.nick(),
 				msg.command() + " :Unknown command"));
 		return;
@@ -46,7 +39,7 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 
 	ACommand* command = it->second;
 	if (command->needsRegistration() && !client.isRegistered()) {
-		send(server, client, Reply::numeric(server.serverName(),
+		server.sendLine(client, Reply::numeric(server.serverName(),
 				Reply::ERR_NOTREGISTERED, client.nick(),
 				":You have not registered"));
 		return;
@@ -58,7 +51,7 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		command->execute(server, client, msg);
 	}
 	catch (const IrcException& e) {
-		send(server, client, Reply::numeric(server.serverName(), e.code(),
+		server.sendLine(client, Reply::numeric(server.serverName(), e.code(),
 				e.target(), e.detail()));
 	}
 	catch (const std::exception&) {
