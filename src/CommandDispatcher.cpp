@@ -1,10 +1,59 @@
 #include "CommandDispatcher.hpp"
 
+#include <exception>
+
+#include "ACommand.hpp"
+#include "Client.hpp"
+#include "IrcException.hpp"
+#include "Message.hpp"
+#include "Reply.hpp"
+#include "Server.hpp"
+
 CommandDispatcher::CommandDispatcher() {
+	// registerCommand("PASS", new PassCommand()) のようにコマンド担当がここで登録する
+	// 登録名は大文字（Message::parseがcommandを大文字化するため）
 }
 
 CommandDispatcher::~CommandDispatcher() {
+	for (std::map<std::string, ACommand*>::iterator it = _table.begin();
+			it != _table.end(); ++it) {
+		delete it->second;
+	}
+	_table.clear();
 }
 
-void CommandDispatcher::dispatch(Server&, Client&, const Message&) {
+void CommandDispatcher::registerCommand(const std::string& name,
+		ACommand* command) {
+	_table[name] = command;
+}
+
+void CommandDispatcher::dispatch(Server& server, Client& client,
+		const Message& msg) {
+	std::map<std::string, ACommand*>::iterator it = _table.find(msg.command());
+	if (it == _table.end()) {
+		server.sendLine(client, Reply::numeric(server.serverName(),
+				Reply::ERR_UNKNOWNCOMMAND, client.nick(),
+				msg.command() + " :Unknown command"));
+		return;
+	}
+
+	ACommand* command = it->second;
+	if (command->needsRegistration() && !client.isRegistered()) {
+		server.sendLine(client, Reply::numeric(server.serverName(),
+				Reply::ERR_NOTREGISTERED, client.nick(),
+				":You have not registered"));
+		return;
+	}
+
+	// コマンドは検証失敗をIrcExceptionで投げる。ここで数値応答へ整形して返す。
+	// 想定外の例外もサーバは落とさない（要件N8）。
+	try {
+		command->execute(server, client, msg);
+	}
+	catch (const IrcException& e) {
+		server.sendLine(client, Reply::numeric(server.serverName(), e.code(),
+				e.target(), e.detail()));
+	}
+	catch (const std::exception&) {
+	}
 }
