@@ -14,6 +14,7 @@
 
 #include "Channel.hpp"
 #include "Client.hpp"
+#include "Message.hpp"
 
 namespace {
 	const std::size_t READ_CHUNK = 4096;
@@ -243,7 +244,11 @@ void Server::handleReadable(Client& client) {
 		n = recv(client.fd(), buf, sizeof(buf), 0);
 	}
 
+	int fd = client.fd();
 	pumpLines(client);
+	if (_clients.find(fd) == _clients.end()) {
+		return;
+	}
 
 	if (client.inputOverflow()) {
 		disconnect(client, "input line too long");
@@ -278,9 +283,18 @@ void Server::handleWritable(Client& client) {
 }
 
 void Server::pumpLines(Client& client) {
+	int fd = client.fd();
 	std::string line;
 	while (client.extractLine(line)) {
-		queueMessage(client, line + "\r\n");
+		Message msg = Message::parse(line);
+		if (msg.empty()) {
+			continue;
+		}
+		_dispatcher.dispatch(*this, client, msg);
+		// dispatch中にQUIT等で切断済みならclientは解放されている
+		if (_clients.find(fd) == _clients.end()) {
+			return;
+		}
 	}
 }
 
