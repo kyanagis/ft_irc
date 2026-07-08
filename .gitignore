@@ -19,6 +19,9 @@ compile_flags.txt
 
 compile_commands.json
 
+# ローカル専用の設計ドキュメント（push しない）
+docs/
+
 # 検証ハーネス：ソースは追跡（CIで実行）、ビルド成果物のみ除外
 verify/verify
 verify/verify_cov
