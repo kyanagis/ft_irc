@@ -332,13 +332,16 @@ void Server::completeRegistration(Client& client) {
 }
 
 void Server::disconnect(Client& client, const std::string& reason) {
-	(void)reason;
 	int fd = client.fd();
+	// 参加中の各チャンネルへ QUIT を1回ずつ通知（本人は除外）。除去前に流す。
+	const std::string quitLine = Reply::from(client.prefix(), "QUIT :" + reason);
 
 	// 参加中だけでなくinvitedのみのチャンネルにも生ポインタが残るので全走査
 	std::map<std::string, Channel*>::iterator it = _channels.begin();
 	while (it != _channels.end()) {
 		Channel* channel = it->second;
+		if (channel->hasMember(client))
+			channel->broadcast(quitLine, &client);
 		channel->removeMember(client);
 		if (channel->isEmpty()) {
 			delete channel;
