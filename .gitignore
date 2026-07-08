@@ -19,5 +19,9 @@ compile_flags.txt
 
 compile_commands.json
 
-# ローカル検証ハーネス（提出物に含めない）
-verify/
+# 検証ハーネス：ソースは追跡（CIで実行）、ビルド成果物のみ除外
+verify/verify
+verify/verify_cov
+verify/*.profraw
+verify/*.profdata
+verify/*.dSYM/
