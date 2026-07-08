@@ -15,10 +15,12 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "Message.hpp"
+#include "Reply.hpp"
 
 namespace {
 	const std::size_t READ_CHUNK = 4096;
 	const std::string IRC_CRLF = "\r\n";
+	const std::string SERVER_VERSION = "1.0";
 
 	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
 	std::string lowerAscii(const std::string& s) {
@@ -306,6 +308,27 @@ void Server::queueMessage(Client& client, const std::string& message) {
 // 1行をCRLF終端で送信キューへ積む。コマンドはこちらを使う（queueMessageは生バイト用）
 void Server::sendLine(Client& client, const std::string& line) {
 	client.appendOutput(line + IRC_CRLF);
+}
+
+// PASS/NICK/USER が処理後に呼ぶ共通ロジック。pass/nick/user が揃うまでは何もしない。
+// 揃った瞬間に登録完了扱いにしてウェルカム001-004を順に送る（多重送出は !isRegistered で防止）。
+void Server::completeRegistration(Client& client) {
+	if (client.isRegistered() || !client.passAccepted()
+			|| !client.hasNick() || !client.hasUser()) {
+		return;
+	}
+	client.markRegistered();
+
+	const std::string& name = _serverName;
+	const std::string& nick = client.nick();
+	sendLine(client, Reply::numeric(name, Reply::RPL_WELCOME, nick,
+			":Welcome to the Internet Relay Network " + client.prefix()));
+	sendLine(client, Reply::numeric(name, Reply::RPL_YOURHOST, nick,
+			":Your host is " + name + ", running version " + SERVER_VERSION));
+	sendLine(client, Reply::numeric(name, Reply::RPL_CREATED, nick,
+			":This server was created " + _createdAt));
+	sendLine(client, Reply::numeric(name, Reply::RPL_MYINFO, nick,
+			name + " " + SERVER_VERSION + " o itkol"));
 }
 
 void Server::disconnect(Client& client, const std::string& reason) {
