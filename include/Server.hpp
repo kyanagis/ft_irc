@@ -29,6 +29,9 @@ public:
 	void     queueMessage(Client& client, const std::string& message);
 	void     sendLine(Client& client, const std::string& line);
 
+	// PASS/NICK/USER が各自の処理後に呼ぶ。4条件が揃うまでは no-op。
+	void     completeRegistration(Client& client);
+
 	const std::string& password() const;
 	const std::string& serverName() const;
 	const std::string& createdAt() const;
