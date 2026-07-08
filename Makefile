@@ -1,7 +1,7 @@
 NAME      := ircserv
 
 CXX       := c++
-CXXFLAGS  := -Wall -Wextra -Werror -std=c++98
+CXXFLAGS  := -Wall -Wextra -Werror -std=c++98 -pedantic-errors
 DEPFLAGS  := -MMD -MP
 INCLUDES  := -I include -I include/commands
 
