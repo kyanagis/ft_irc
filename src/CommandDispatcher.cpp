@@ -8,10 +8,12 @@
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
+#include "Join.hpp"
 
 CommandDispatcher::CommandDispatcher() {
 	// registerCommand("PASS", new PassCommand()) のようにコマンド担当がここで登録する
 	// 登録名は大文字（Message::parseがcommandを大文字化するため）
+	registerCommand("JOIN", new JoinCommand());
 }
 
 CommandDispatcher::~CommandDispatcher() {
