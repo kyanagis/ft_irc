@@ -12,6 +12,10 @@ bool UserCommand::needsRegistration() const {
 }
 
 void UserCommand::execute(Server& server, Client& client, const Message& msg) {
+	if (client.isRegistered()) {
+		throw IrcException(Reply::ERR_ALREADYREGISTRED, client.nick(),
+				":You may not reregister");
+	}
 	// USER <username> <mode> <unused> :<realname> の4引数が必須。
 	// 中2つ（mode/unused）はRFC上無視する。
 	if (msg.size() < 4) {
