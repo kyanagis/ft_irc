@@ -12,6 +12,10 @@ bool PassCommand::needsRegistration() const {
 }
 
 void PassCommand::execute(Server& server, Client& client, const Message& msg) {
+	if (client.isRegistered()) {
+		throw IrcException(Reply::ERR_ALREADYREGISTRED, client.nick(),
+				":You may not reregister");
+	}
 	if (msg.size() == 0 || msg.param(0).empty()) {
 		throw IrcException(Reply::ERR_NEEDMOREPARAMS, client.nick(),
 				"PASS :Not enough parameters");
