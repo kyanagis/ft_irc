@@ -10,11 +10,13 @@
 #include "Server.hpp"
 #include "Join.hpp"
 #include "Pass.hpp"
+#include "Nick.hpp"
 
 CommandDispatcher::CommandDispatcher() {
 	// コマンド担当がここで登録する
 	// 登録名は大文字（Message::parseがcommandを大文字化するため）
 	registerCommand("PASS", new PassCommand());
+	registerCommand("NICK", new NickCommand());
 	registerCommand("JOIN", new JoinCommand());
 }
 
