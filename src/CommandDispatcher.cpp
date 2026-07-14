@@ -15,6 +15,7 @@
 #include "Part.hpp"
 #include "Ping.hpp"
 #include "Cap.hpp"
+#include "Quit.hpp"
 
 CommandDispatcher::CommandDispatcher() {
 	// コマンド担当がここで登録する
@@ -26,6 +27,7 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("PART", new PartCommand());
 	registerCommand("PING", new PingCommand());
 	registerCommand("CAP", new CapCommand());
+	registerCommand("QUIT", new QuitCommand());
 }
 
 CommandDispatcher::~CommandDispatcher() {
