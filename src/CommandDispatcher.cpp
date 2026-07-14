@@ -12,6 +12,7 @@
 #include "Pass.hpp"
 #include "Nick.hpp"
 #include "User.hpp"
+#include "Part.hpp"
 
 CommandDispatcher::CommandDispatcher() {
 	// コマンド担当がここで登録する
@@ -20,6 +21,7 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("NICK", new NickCommand());
 	registerCommand("USER", new UserCommand());
 	registerCommand("JOIN", new JoinCommand());
+	registerCommand("PART", new PartCommand());
 }
 
 CommandDispatcher::~CommandDispatcher() {
