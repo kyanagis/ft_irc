@@ -13,6 +13,7 @@
 #include "Nick.hpp"
 #include "User.hpp"
 #include "Part.hpp"
+#include "Topic.hpp"
 
 CommandDispatcher::CommandDispatcher() {
 	// コマンド担当がここで登録する
@@ -22,6 +23,7 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("USER", new UserCommand());
 	registerCommand("JOIN", new JoinCommand());
 	registerCommand("PART", new PartCommand());
+	registerCommand("TOPIC", new TopicCommand());
 }
 
 CommandDispatcher::~CommandDispatcher() {
