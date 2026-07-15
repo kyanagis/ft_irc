@@ -10,6 +10,7 @@ ircserv
 .DS_Store
 *.swp
 *~
+__pycache__/
 .vscode/
 .idea/
 
@@ -22,9 +23,17 @@ compile_commands.json
 # ローカル専用の設計ドキュメント（push しない）
 docs/
 
-# 検証ハーネス：ソースは追跡（CIで実行）、ビルド成果物のみ除外
+# 検証ハーネス：ソース/種コーパスは追跡（CIで実行）、ビルド成果物のみ除外
 verify/verify
 verify/verify_cov
+verify/fuzz
 verify/*.profraw
 verify/*.profdata
 verify/*.dSYM/
+verify/server.log
+# libFuzzer が実行時に落とす再現物（CIはアーティファクトで回収、リポには入れない）
+verify/crash-*
+verify/oom-*
+verify/timeout-*
+verify/leak-*
+verify/slow-unit-*
