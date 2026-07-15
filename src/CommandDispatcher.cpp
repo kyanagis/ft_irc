@@ -17,6 +17,7 @@
 #include "Ping.hpp"
 #include "Cap.hpp"
 #include "Quit.hpp"
+#include "Privmsg.hpp"
 
 CommandDispatcher::CommandDispatcher() {
 	// コマンド担当がここで登録する
@@ -30,6 +31,7 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("PING", new PingCommand());
 	registerCommand("CAP", new CapCommand());
 	registerCommand("QUIT", new QuitCommand());
+	registerCommand("PRIVMSG", new PrivmsgCommand());
 }
 
 CommandDispatcher::~CommandDispatcher() {
