@@ -1,23 +1,31 @@
 name: CI
 
-# dev へ PR を出したとき（base=dev）に発火するゲート。
+# dev / main への PR（と main への push）で発火するゲート。
 # 「-Werror でビルド green」＋「パーサ/Reply の property test を ASan/UBSan 下で実行」
 # ＋「実サーバの結合スモーク(N14/N8)」＋「カバレッジ・静的解析ゲート」を機械検査する
 # （42 の評価基準：警告ゼロ・クラッシュ/leak/UB なし）。
 
 on:
   pull_request:
-    branches: [dev]
+    branches: [dev, main]   # dev だけでなく dev→main も必ずゲートする
+  push:
+    branches: [main]        # main を壊すマージ/直 push を検知
+  workflow_dispatch: {}     # 手動再実行
 
-# 同一ブランチで新しい push が来たら古い実行はキャンセル
+# 既定は最小権限（読み取りのみ）。トークン漏洩時の被害を最小化する
+permissions:
+  contents: read
+
+# 同一 ref で新しい push が来たら古い実行はキャンセル
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     name: build (${{ matrix.cxx }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -32,7 +40,8 @@ jobs:
 
   sanitize:
     name: verification harness (ASan/UBSan)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Toolchain
@@ -40,7 +49,7 @@ jobs:
       - name: Build verify harness (ASan + UBSan)
         run: make -C verify verify
       - name: Run all checks (Message/Reply property + StringUtil/Client/Channel/IrcException units)
-        # UBSan は既定で continue するので halt_on_error でゲート化する
+        # UBSan は -fno-sanitize-recover=all でビルド済み。env は stacktrace 目的
         env:
           UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
           ASAN_OPTIONS: abort_on_error=1
@@ -48,7 +57,8 @@ jobs:
 
   fuzz:
     name: fuzz parse/extractLine (libFuzzer)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install clang (libFuzzer runtime)
@@ -56,24 +66,51 @@ jobs:
       - name: Build fuzz target (fuzzer+ASan+UBSan)
         run: make -C verify fuzz
       - name: Fuzz byte-facing code (time-boxed, crash => fail)
-        run: ./verify/fuzz -max_total_time=30 -rss_limit_mb=2048
+        # UBSan は halt するようビルド済み。crash 再現物は verify/ に落として回収する
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
+          ASAN_OPTIONS: abort_on_error=1
+        run: >
+          ./verify/fuzz -max_total_time=30 -rss_limit_mb=2048
+          -artifact_prefix=verify/ verify/corpus
+      - name: Upload crash reproducers on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          if-no-files-found: ignore
+          path: |
+            verify/crash-*
+            verify/oom-*
+            verify/timeout-*
+            verify/leak-*
+            verify/slow-unit-*
 
   integration:
     name: integration smoke (N14/N8)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Build server
         run: make
-        # PASS/NICK/USER実装したからIRC_TEST_REGISTRATION=1de有効化    
+        # PASS/NICK/USER実装したからIRC_TEST_REGISTRATION=1で有効化
       - name: Partial-send reassembly & crash-resistance
         env:
           IRC_TEST_REGISTRATION: "1"
         run: python3 verify/integration.py
+      - name: Upload server log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-server-log
+          if-no-files-found: ignore
+          path: verify/server.log
 
   coverage:
     name: coverage gate (Message/Reply/StringUtil 100%)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install LLVM coverage tools
@@ -100,10 +137,18 @@ jobs:
               sys.exit(1)
           print("OK")
           PY
+      - name: Upload coverage export on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          if-no-files-found: ignore
+          path: verify/cov.json
 
   static-analysis:
     name: static analysis (cppcheck)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Install cppcheck
