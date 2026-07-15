@@ -18,7 +18,11 @@ import time
 HOST = "127.0.0.1"
 PASSWORD = "cipass"
 
+# サーバの stdout/stderr を退避するファイル（CI が失敗時にアーティファクト回収する）
+LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
+
 _failures = []
+_log_file = None
 
 
 def check(name, cond, detail=""):
@@ -35,15 +39,26 @@ def free_port():
     return port
 
 
+def _read_log():
+    with contextlib.suppress(OSError):
+        with open(LOG_PATH, "rb") as f:
+            return f.read().decode(errors="replace")
+    return ""
+
+
 def start_server(port):
+    # PIPE を read しないとバッファ詰まりで固まりうるので、常にファイルへ流す。
+    # 失敗時はこのファイルを CI がアップロードして原因追跡に使う。
+    global _log_file
+    _log_file = open(LOG_PATH, "wb")
     proc = subprocess.Popen(
         ["./ircserv", str(port), PASSWORD],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        stdout=_log_file, stderr=subprocess.STDOUT,
     )
     for _ in range(50):
         if proc.poll() is not None:
-            out = proc.stdout.read().decode(errors="replace") if proc.stdout else ""
-            raise RuntimeError("server exited early:\n" + out)
+            _log_file.flush()
+            raise RuntimeError("server exited early:\n" + _read_log())
         with contextlib.suppress(OSError):
             c = socket.create_connection((HOST, port), timeout=0.2)
             c.close()
@@ -128,9 +143,13 @@ def main():
         proc.terminate()
         with contextlib.suppress(Exception):
             proc.wait(timeout=3)
+        if _log_file is not None:
+            with contextlib.suppress(Exception):
+                _log_file.close()
 
     if _failures:
         print("integration FAILED: " + ", ".join(_failures))
+        print("server log -> " + LOG_PATH)
         sys.exit(1)
     print("integration OK")
 

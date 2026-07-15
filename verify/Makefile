@@ -2,9 +2,11 @@
 # ASan/UBSanとカバレッジ計測のためApple clang++を明示
 CXX      := clang++
 CXXFLAGS := -Wall -Wextra -Werror -std=c++98 -O2 -g -I ../include -I .
-SAN      := -fsanitize=address,undefined -fno-omit-frame-pointer
+# -fno-sanitize-recover=all: UBSan を「表示して継続」ではなく即 abort させ、
+# env(UBSAN_OPTIONS) に依存せず verify/fuzz 双方でUBを確実に赤にする
+SAN      := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 COV      := -fprofile-instr-generate -fcoverage-mapping
-FUZZSAN  := -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer
+FUZZSAN  := -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 
 # 検証対象のコード（
 SRCS := verify.cpp \
