@@ -65,8 +65,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build server
         run: make
+        # PASS/NICK/USER実装したからIRC_TEST_REGISTRATION=1de有効化    
       - name: Partial-send reassembly & crash-resistance
-        # 登録フロー(001)は PASS/NICK/USER 実装後に IRC_TEST_REGISTRATION=1 を足して有効化
+        env:
+          IRC_TEST_REGISTRATION: "1"
         run: python3 verify/integration.py
 
   coverage:
