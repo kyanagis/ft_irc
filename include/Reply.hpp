@@ -19,6 +19,7 @@ public:
 	static const int ERR_NOSUCHNICK       = 401;
 	static const int ERR_NOSUCHCHANNEL    = 403;
 	static const int ERR_CANNOTSENDTOCHAN = 404;
+	static const int ERR_TOOMANYTARGETS   = 407;
 	static const int ERR_NORECIPIENT      = 411;
 	static const int ERR_NOTEXTTOSEND     = 412;
 	static const int ERR_UNKNOWNCOMMAND   = 421;
