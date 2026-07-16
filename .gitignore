@@ -27,10 +27,13 @@ docs/
 verify/verify
 verify/verify_cov
 verify/fuzz
+verify/ircserv_asan
 verify/*.profraw
 verify/*.profdata
 verify/*.dSYM/
 verify/server.log
+# カバレッジ export（CI が生成・失敗時のみアーティファクト回収）
+verify/cov*.json
 # libFuzzer が実行時に落とす再現物（CIはアーティファクトで回収、リポには入れない）
 verify/crash-*
 verify/oom-*

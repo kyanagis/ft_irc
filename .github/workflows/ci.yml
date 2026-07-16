@@ -2,8 +2,9 @@ name: CI
 
 # dev / main への PR（と main への push）で発火するゲート。
 # 「-Werror でビルド green」＋「パーサ/Reply の property test を ASan/UBSan 下で実行」
-# ＋「実サーバの結合スモーク(N14/N8)」＋「カバレッジ・静的解析ゲート」を機械検査する
-# （42 の評価基準：警告ゼロ・クラッシュ/leak/UB なし）。
+# ＋実サーバ(ASan/UBSan版)の結合スモーク(N14/N8)＋全コマンド E2E 未実装はskio
+# ＋純ロジック全ファイルの region+line+branch=100% ＋ パーサ全数 totality ゲート
+# ＋静的解析ゲートを機械検査する
 
 on:
   pull_request:
@@ -87,17 +88,24 @@ jobs:
             verify/slow-unit-*
 
   integration:
-    name: integration smoke (N14/N8)
+    name: integration smoke + ASan/UBSan server (N14/N8 + all-command E2E)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Build server
-        run: make
-        # PASS/NICK/USER実装したからIRC_TEST_REGISTRATION=1で有効化
-      - name: Partial-send reassembly & crash-resistance
+      - name: Build sanitized server (ASan + UBSan)
+        # verify/ で別バイナリ ircserv_asan を作る。
+        # poll/socket/状態遷移の I/O 層まで含めた実サーバをサニタイザ下で回せる。
+        run: make -C verify ircserv_asan
+      - name: Smoke + per-command E2E under ASan/UBSan
+        # 未実装コマンドは integration.py 内の 421 probe で自動 skip。
+        # IRC_TEST_REGISTRATION=1 で登録フロー＋登録系エラーの回帰ガードも有効化。
+        # 動作中の heap-overflow / use-after-free / UB はサニタイザが即 abort させ赤にする。
         env:
+          IRCSERV_BIN: verify/ircserv_asan
           IRC_TEST_REGISTRATION: "1"
+          ASAN_OPTIONS: abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
         run: python3 verify/integration.py
       - name: Upload server log on failure
         if: failure()
@@ -108,7 +116,7 @@ jobs:
           path: verify/server.log
 
   coverage:
-    name: coverage gate (Message/Reply/StringUtil 100%)
+    name: coverage gate (pure logic region+line+branch 100%)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -117,33 +125,42 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang llvm
       - name: Build coverage harness
         run: make -C verify verify_cov
-      - name: Collect & gate line coverage
+      - name: Gate 1 — pure logic全ファイルを region+line+branch=100% で機械検査
         working-directory: verify
+        # line 100% だけでは片側しか通らない &&/|| を見逃す。region と branch も 100% を要求し
+        # 全経路網羅を強制する。対象はソケット/poll を含まない純ロジックのみ。
         run: |
           set -euo pipefail
-          LLVM_PROFILE_FILE=v.profraw ./verify_cov all >/dev/null
-          llvm-profdata merge v.profraw -o v.profdata
-          llvm-cov export ./verify_cov -instr-profile=v.profdata \
-            ../src/Message.cpp ../src/Reply.cpp ../src/StringUtil.cpp > cov.json
-          python3 - <<'PY'
-          import json, sys
-          THRESHOLD = 100.0  # 純関数のパーサ/整形/文字列ユーティリティは全カバレッジ維持を要求
-          d = json.load(open("cov.json"))
-          t = d["data"][0]["totals"]["lines"]
-          pct = t["percent"]
-          print("line coverage: %.2f%% (%d/%d)" % (pct, t["covered"], t["count"]))
-          if pct < THRESHOLD:
-              print("FAIL: below %.1f%%" % THRESHOLD)
-              sys.exit(1)
-          print("OK")
-          PY
+          FILES="../src/Message.cpp ../src/Reply.cpp ../src/StringUtil.cpp \
+                 ../src/Client.cpp ../src/IrcException.cpp \
+                 ../src/Channel/Channel.cpp ../src/Channel/Channel_members.cpp \
+                 ../src/Channel/Channel_operator.cpp ../src/Channel/Channel_invite.cpp \
+                 ../src/Channel/Channel_topic.cpp ../src/Channel/Channel_mode.cpp \
+                 ../src/Channel/Channel_broadcast.cpp"
+          LLVM_PROFILE_FILE=all.profraw ./verify_cov all >/dev/null
+          llvm-profdata merge all.profraw -o all.profdata
+          llvm-cov export ./verify_cov -instr-profile=all.profdata $FILES > cov.json
+          python3 coverage_gate.py cov.json
+      - name: Gate 2 — パーサ全数テスト単体で Message.cpp を 100% 網羅（totality の機械証明）
+        working-directory: verify
+        # exhaustive(<=12) だけを走らせて Message.cpp が region+line+branch=100% になることを要求。
+        # 「長さ<=12 の全数列挙がパーサの全経路を踏む」= 13文字目以降に新経路が無いことの証拠
+        # （T2 置換補題と併せ、有界全数を全長へ一般化する根拠を CI で固定する）。
+        run: |
+          set -euo pipefail
+          LLVM_PROFILE_FILE=ex.profraw ./verify_cov exhaustive 12 >/dev/null
+          llvm-profdata merge ex.profraw -o ex.profdata
+          llvm-cov export ./verify_cov -instr-profile=ex.profdata ../src/Message.cpp > cov_parser.json
+          python3 coverage_gate.py cov_parser.json
       - name: Upload coverage export on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           if-no-files-found: ignore
-          path: verify/cov.json
+          path: |
+            verify/cov.json
+            verify/cov_parser.json
 
   static-analysis:
     name: static analysis (cppcheck)
