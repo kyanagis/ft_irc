@@ -446,6 +446,7 @@ static void runStringUtil() {
 	checkEq(StringUtil::trim("noedge"), "noedge", "trim none");
 	checkEq(StringUtil::trim("   "), "", "trim all-space");
 	checkEq(StringUtil::trim("\t\r\n x \n"), "x", "trim mixed ws");
+	checkEq(StringUtil::trim("\f\v x \v\f"), "x", "trim form-feed/vtab ws");  // \f \v 分岐を網羅
 
 	std::vector<std::string> v = StringUtil::split("a,b,c", ',');
 	expect("split count 3", v.size() == 3);
@@ -498,6 +499,8 @@ static void runClient() {
 		feedAndExpectLines("\r\n", e4, 1);              // 空行
 		const char* e5[] = { "X\rY" };
 		feedAndExpectLines("X\rY\n", e5, 1);            // 末尾以外のCRは保持
+		const char* e6[] = { "" };
+		feedAndExpectLines("\n", e6, 1);                // bare LF 空行（!line.empty() の False 分岐）
 	}
 	// 部分受信：改行が来るまで false、来たら1行に再構築（N14）
 	{
@@ -542,6 +545,8 @@ static void runClient() {
 	// 送受信バッファ・close・overflow
 	{
 		Client d(4, "h");
+		expect("fd getter", d.fd() == 4);           // getter 網羅
+		checkEq(d.host(), "h", "host getter");      // getter 網羅
 		expect("no pending out", !d.hasPendingOutput());
 		expect("not read-closed", !d.isReadClosed());
 		d.appendOutput("xx");
@@ -551,11 +556,17 @@ static void runClient() {
 		expect("read closed", d.isReadClosed());
 
 		Client e(5, "h");
+		expect("no input overflow when empty", !e.inputOverflow());  // size<=512 の False 分岐
 		std::string big(600, 'A');              // 512超・改行なし
 		e.appendInput(big.data(), big.size());
 		expect("input overflow", e.inputOverflow());
 		e.appendInput("\n", 1);                 // 改行が来れば overflow ではない
 		expect("no overflow with newline", !e.inputOverflow());
+
+		Client f(6, "h");                       // outputOverflow 網羅（<=1MiB と >1MiB）
+		expect("no out overflow when small", !f.outputOverflow());
+		f.appendOutput(std::string(1024 * 1024 + 1, 'x'));
+		expect("out overflow when huge", f.outputOverflow());
 	}
 	std::printf("units: Client ok\n");
 }
@@ -582,6 +593,7 @@ static void runChannel() {
 	expect("bob not op", !ch.isOperator(bob));
 	expect("count 2", ch.memberCount() == 2);
 	expect("bob joined set", bob.channels().count("#c") == 1);
+	expect("members() reflects count", ch.members().size() == ch.memberCount());  // getter 網羅
 
 	// operator 付与/剥奪
 	ch.addOperator(bob);
@@ -607,6 +619,8 @@ static void runChannel() {
 	// modes i/t/k/l と modeString の厳密整形
 	ch.setInviteOnly(true);
 	ch.setTopicLocked(true);
+	expect("inviteOnly getter", ch.inviteOnly());     // getter 網羅
+	expect("topicLocked getter", ch.topicLocked());   // getter 網羅
 	checkEq(ch.modeString(), "+it", "modeString +it");
 	ch.setKey("secret");
 	expect("has key", ch.hasKey());
@@ -622,6 +636,20 @@ static void runChannel() {
 	ch.clearLimit();
 	expect("limit cleared", !ch.hasLimit());
 	checkEq(ch.modeString(), "+it", "modeString back to +it");
+
+	// broadcast: except=0 は全員、except=&creator は creator を除外（Channel_broadcast 網羅）
+	{
+		std::string baseC = creator.outBuffer();
+		std::string baseB = bob.outBuffer();
+		ch.broadcast("HELLO");                    // except 既定=0 → 全員へ
+		expect("broadcast reaches creator", creator.outBuffer() == baseC + "HELLO\r\n");
+		expect("broadcast reaches bob", bob.outBuffer() == baseB + "HELLO\r\n");
+		std::string midC = creator.outBuffer();
+		std::string midB = bob.outBuffer();
+		ch.broadcast("SOLO", &creator);           // creator を除外
+		expect("broadcast except skips creator", creator.outBuffer() == midC);
+		expect("broadcast except reaches bob", bob.outBuffer() == midB + "SOLO\r\n");
+	}
 
 	// removeMember は member/operator/invited/参加集合すべてを掃除する
 	ch.addOperator(bob);

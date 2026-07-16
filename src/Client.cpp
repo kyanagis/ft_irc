@@ -2,7 +2,7 @@
 
 namespace {
 	const std::size_t MAX_INPUT_LINE = 512;
-	const std::size_t MAX_OUTPUT_QUEUE = 1024 * 1024;
+	const std::size_t MAX_OUTPUT_QUEUE = 1024UL * 1024;  // size_t で計算（暗黙拡大を回避）
 }
 
 Client::Client(int fd, const std::string& host)
