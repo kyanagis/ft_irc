@@ -389,16 +389,20 @@ def main():
         test_quit(port)
     finally:
         server_died_rc = proc.poll()      # テスト中に死んでいれば非 None（crash/サニタイザ abort）
-        proc.terminate()
+        proc.terminate()                  # SIGTERM → サーバは _running=0 で run() を抜け main を正常 return
+        exit_rc = None
         with contextlib.suppress(Exception):
-            proc.wait(timeout=3)
+            exit_rc = proc.wait(timeout=5)
+        if exit_rc is None:               # 時間内に終了しない = clean shutdown 失敗。強制終了して記録
+            with contextlib.suppress(Exception):
+                proc.kill()
+                proc.wait(timeout=3)
         if _log_file is not None:
             with contextlib.suppress(Exception):
                 _log_file.close()
 
     # サニタイザ検出: サーバがテスト中に異常終了 or ログにサニタイザ報告があれば失敗。
-    # （終了時 leak 検出は SIGTERM ではハンドラ無しで発火しないが、動作中の
-    #   heap-overflow / use-after-free / UB は即 abort してここで赤になる。）
+    # 動作中の heap-overflow / use-after-free / UB は即 abort してここで赤になる。
     log = _read_log()
     markers = ("runtime error:", "AddressSanitizer",
                "UndefinedBehaviorSanitizer", "LeakSanitizer")
@@ -407,6 +411,13 @@ def main():
               False, "server exited early rc=%d" % server_died_rc)
     hit = [m for m in markers if m in log]
     check("no sanitizer report in server log", not hit, "markers=%r" % hit)
+
+    # クリーン終了の検証: SIGTERM で run() を抜け main が 0 を返すこと。
+    # これが (1) leak 検出（LSan は正常終了時のみ動く）と
+    #        (2) サーバ側カバレッジ（profraw は正常終了時に書き出される）を有効化する。
+    # LSan が leak を報告すると exit_rc != 0 になり、このチェックが赤にする。
+    check("server shuts down cleanly on SIGTERM (rc==0; enables LSan leak check + profraw)",
+          exit_rc == 0, "exit_rc=%r" % exit_rc)
 
     if _skipped:
         print("skipped (unimplemented): " + ", ".join(_skipped))

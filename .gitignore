@@ -4,8 +4,11 @@
 *.so
 *.out
 *.d
+*.profraw
+*.profdata
 obj/
 ircserv
+server_cov.txt
 
 .DS_Store
 *.swp
@@ -28,6 +31,7 @@ verify/verify
 verify/verify_cov
 verify/fuzz
 verify/ircserv_asan
+verify/ircserv_cov
 verify/*.profraw
 verify/*.profdata
 verify/*.dSYM/
