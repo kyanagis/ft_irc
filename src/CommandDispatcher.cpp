@@ -74,6 +74,7 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		server.sendLine(client, Reply::numeric(server.serverName(), e.code(),
 				e.target(), e.detail()));
 	}
+	// NOLINTNEXTLINE(bugprone-empty-catch): 想定外の例外でもサーバを落とさない（要件N8）。意図的に握り潰す。
 	catch (const std::exception&) {
 	}
 }
