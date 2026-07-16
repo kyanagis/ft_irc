@@ -1,5 +1,6 @@
 #include "commands/Privmsg.hpp"
 
+#include <set>
 #include <sstream>
 
 #include "Channel.hpp"
@@ -61,7 +62,6 @@ void sendToUser(Server& server, Client& client, const std::string& target,
 
 void PrivmsgCommand::execute(Server& server, Client& client,
                              const Message& msg) {
-    // PRIVMSG :hello （宛先なし）の時にここに入ってない？412が帰ってきていた。
     if (msg.size() == 0 || msg.param(0).empty()) {
         throw IrcException(Reply::ERR_NORECIPIENT, client.nick(),
                            ":No recipient given (PRIVMSG)");
@@ -72,10 +72,21 @@ void PrivmsgCommand::execute(Server& server, Client& client,
     }
 
     std::vector<std::string> targets = split(msg.param(0), ',');
+    std::set<std::string> uniqueTargets;
     const std::string& text = msg.param(1);
     for (std::vector<std::string>::iterator it = targets.begin();
          it != targets.end(); ++it) {
         const std::string& target = *it;
+        if (!uniqueTargets.insert(target).second) {
+            server.sendLine(
+                client,
+                Reply::numeric(
+                    server.serverName(), Reply::ERR_TOOMANYTARGETS,
+                    client.nick(),
+                    target + " :Duplicate recipients. No message delivered"));
+            continue;
+        }
+
         std::string line =
             Reply::from(client.prefix(), "PRIVMSG " + target + " :" + text);
         if (!target.empty() && target[0] == '#') {
