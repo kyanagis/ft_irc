@@ -4,12 +4,16 @@
 *.so
 *.out
 *.d
+*.profraw
+*.profdata
 obj/
 ircserv
+server_cov.txt
 
 .DS_Store
 *.swp
 *~
+__pycache__/
 .vscode/
 .idea/
 
@@ -22,11 +26,23 @@ compile_commands.json
 # ローカル専用の設計ドキュメント（push しない）
 docs/
 
-# 検証ハーネス：ソースは追跡（CIで実行）、ビルド成果物のみ除外
+# 検証ハーネス：ソース/種コーパスは追跡（CIで実行）、ビルド成果物のみ除外
 verify/verify
 verify/verify_cov
+verify/fuzz
+verify/ircserv_asan
+verify/ircserv_cov
 verify/*.profraw
 verify/*.profdata
 verify/*.dSYM/
 
 .clang-format
+verify/server.log
+# カバレッジ export（CI が生成・失敗時のみアーティファクト回収）
+verify/cov*.json
+# libFuzzer が実行時に落とす再現物（CIはアーティファクトで回収、リポには入れない）
+verify/crash-*
+verify/oom-*
+verify/timeout-*
+verify/leak-*
+verify/slow-unit-*

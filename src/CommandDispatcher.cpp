@@ -13,7 +13,9 @@
 #include "Nick.hpp"
 #include "User.hpp"
 #include "Part.hpp"
+#include "Kick.hpp"
 #include "Topic.hpp"
+#include "Mode.hpp"
 #include "Ping.hpp"
 #include "Cap.hpp"
 #include "Quit.hpp"
@@ -27,7 +29,9 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("USER", new UserCommand());
 	registerCommand("JOIN", new JoinCommand());
 	registerCommand("PART", new PartCommand());
+	registerCommand("KICK", new KickCommand());
 	registerCommand("TOPIC", new TopicCommand());
+	registerCommand("MODE", new ModeCommand());
 	registerCommand("PING", new PingCommand());
 	registerCommand("CAP", new CapCommand());
 	registerCommand("QUIT", new QuitCommand());
@@ -74,6 +78,7 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		server.sendLine(client, Reply::numeric(server.serverName(), e.code(),
 				e.target(), e.detail()));
 	}
+	// NOLINTNEXTLINE(bugprone-empty-catch): 想定外の例外でもサーバを落とさない（要件N8）。意図的に握り潰す。
 	catch (const std::exception&) {
 	}
 }
