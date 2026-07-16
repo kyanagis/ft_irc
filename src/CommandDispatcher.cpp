@@ -13,6 +13,7 @@
 #include "Nick.hpp"
 #include "User.hpp"
 #include "Part.hpp"
+#include "Kick.hpp"
 #include "Topic.hpp"
 #include "Mode.hpp"
 #include "Ping.hpp"
@@ -27,6 +28,7 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("USER", new UserCommand());
 	registerCommand("JOIN", new JoinCommand());
 	registerCommand("PART", new PartCommand());
+	registerCommand("KICK", new KickCommand());
 	registerCommand("TOPIC", new TopicCommand());
 	registerCommand("MODE", new ModeCommand());
 	registerCommand("PING", new PingCommand());
