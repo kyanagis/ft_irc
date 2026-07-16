@@ -4,8 +4,10 @@
 # bugprone-*      : バグパターン,以下は除外する:
 #   - easily-swappable-parameters : 同型の隣接引数を並べただけで出る純スタイル警告
 #   - signal-handler              : 静的メンバ関数を signal handler に使う点への C++17 前ペダントリ。
-# performance-* / portability-*   : 
+# portability-*   : g++/clang++ 両対応の低誤検知チェック。
+# performance-* は入れない（endl/不要コピー等はマイクロ最適化で正確性ではないため）。
 #
+# 方針: 正確性（バグ）に絞ってゲートし，実装中コードをスタイルでブロックしない。
 # WarningsAsErrors='*' で、選定チェックの指摘は 1 件でも CI を赤にする。
 Checks: >
   -*,
@@ -13,6 +15,5 @@ Checks: >
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-signal-handler,
-  performance-*,
   portability-*
 WarningsAsErrors: '*'

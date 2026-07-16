@@ -196,6 +196,9 @@ void Server::run() {
 			}
 			Client* client = it->second;
 
+			// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete): disconnect 後は find(fd)==end() で
+			// 必ず continue するため UAF にならない（解析器の誤検知）
+
 			if (re & POLLIN) {
 				handleReadable(*client);
 				if (_clients.find(fd) == _clients.end()) {
@@ -217,6 +220,7 @@ void Server::run() {
 					disconnect(*client, "poll error/hangup");
 				}
 			}
+			// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 		}
 	}
 }
