@@ -19,8 +19,14 @@ SRCS := verify.cpp \
 
 FUZZ_SRCS := fuzz.cpp ../src/Message.cpp ../src/Client.cpp
 
+SERVER_SRCS := $(sort $(wildcard ../src/*.cpp) $(wildcard ../src/*/*.cpp))
+
 verify: $(SRCS) spec_parser.hpp
 	$(CXX) $(CXXFLAGS) $(SAN) $(SRCS) -o $@
+
+# ../include/commands も要る（コマンド実装のヘッダ）
+ircserv_asan: $(SERVER_SRCS)
+	$(CXX) $(CXXFLAGS) $(SAN) -I ../include/commands $(SERVER_SRCS) -o $@
 
 verify_cov: $(SRCS) spec_parser.hpp
 	$(CXX) $(CXXFLAGS) $(COV) $(SRCS) -o $@
@@ -30,6 +36,6 @@ fuzz: $(FUZZ_SRCS)
 	$(CXX) $(CXXFLAGS) $(FUZZSAN) $(FUZZ_SRCS) -o $@
 
 clean:
-	rm -f verify verify_cov fuzz *.profraw *.profdata
+	rm -f verify verify_cov fuzz ircserv_asan *.profraw *.profdata
 
 .PHONY: clean
