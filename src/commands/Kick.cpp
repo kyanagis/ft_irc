@@ -38,7 +38,7 @@ bool KickCommand::needsRegistration() const {
 }
 
 void KickCommand::execute(Server& server, Client& client, const Message& msg) {
-	if (msg.size() < 2) {
+	if (msg.size() < 2 || msg.param(1).empty()) {
 		throw IrcException(Reply::ERR_NEEDMOREPARAMS, client.nick(),
 				"KICK :Not enough parameters");
 	}
