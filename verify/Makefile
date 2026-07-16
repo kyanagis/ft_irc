@@ -6,6 +6,9 @@ CXXFLAGS := -Wall -Wextra -Werror -std=c++98 -O2 -g -I ../include -I .
 # env(UBSAN_OPTIONS) に依存せず verify/fuzz 双方でUBを確実に赤にする
 SAN      := -fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 COV      := -fprofile-instr-generate -fcoverage-mapping
+# MC/DC（判定条件網羅）。純ロジックのみに適用。>6条件の判定があると -Werror で割れるため
+# サーバ全体(ircserv_cov)には付けない（純ロジックは最大6条件で確認済み）。
+MCDC     := -fcoverage-mcdc
 FUZZSAN  := -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 
 # 検証対象のコード（
@@ -29,13 +32,19 @@ ircserv_asan: $(SERVER_SRCS)
 	$(CXX) $(CXXFLAGS) $(SAN) -I ../include/commands $(SERVER_SRCS) -o $@
 
 verify_cov: $(SRCS) spec_parser.hpp
-	$(CXX) $(CXXFLAGS) $(COV) $(SRCS) -o $@
+	$(CXX) $(CXXFLAGS) $(COV) $(MCDC) $(SRCS) -o $@
+
+# 実サーバのカバレッジ計測版（report 専用・ゲートしない）。integration がクリーン終了
+# （SIGTERM→run()を抜けmain正常return）した時に profraw が書き出される。commands/IO層の
+# 到達度を可視化する。MC/DC は付けない（>6条件判定で -Werror が割れうるため）。
+ircserv_cov: $(SERVER_SRCS)
+	$(CXX) $(CXXFLAGS) $(COV) -I ../include/commands $(SERVER_SRCS) -o $@
 
 # バイトパーサのファジング（libFuzzer）。CI で time-box 実行する
 fuzz: $(FUZZ_SRCS)
 	$(CXX) $(CXXFLAGS) $(FUZZSAN) $(FUZZ_SRCS) -o $@
 
 clean:
-	rm -f verify verify_cov fuzz ircserv_asan *.profraw *.profdata
+	rm -f verify verify_cov ircserv_cov fuzz ircserv_asan *.profraw *.profdata cov*.json
 
 .PHONY: clean

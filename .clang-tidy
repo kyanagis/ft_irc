@@ -1,0 +1,18 @@
+# clang-tidy — 静的解析ゲート（提出物ビルドとは独立・採点対象外）
+#
+# clang-analyzer-*: clang static analyzer（scan-build と同一の解析エンジン)。
+# bugprone-*      : バグパターン,以下は除外する:
+#   - easily-swappable-parameters : 同型の隣接引数を並べただけで出る純スタイル警告
+#   - signal-handler              : 静的メンバ関数を signal handler に使う点への C++17 前ペダントリ。
+# performance-* / portability-*   : 
+#
+# WarningsAsErrors='*' で、選定チェックの指摘は 1 件でも CI を赤にする。
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signal-handler,
+  performance-*,
+  portability-*
+WarningsAsErrors: '*'
