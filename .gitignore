@@ -44,3 +44,5 @@ verify/oom-*
 verify/timeout-*
 verify/leak-*
 verify/slow-unit-*
+
+.clang-format
