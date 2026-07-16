@@ -28,3 +28,5 @@ verify/verify_cov
 verify/*.profraw
 verify/*.profdata
 verify/*.dSYM/
+
+.clang-format
