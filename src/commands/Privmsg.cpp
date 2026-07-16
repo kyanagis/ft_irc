@@ -1,7 +1,6 @@
 #include "commands/Privmsg.hpp"
 
 #include <set>
-#include <sstream>
 
 #include "Channel.hpp"
 #include "Client.hpp"
@@ -9,18 +8,9 @@
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
+#include "StringUtil.hpp"
 
 namespace {
-
-std::vector<std::string> split(const std::string& str, char delim) {
-    std::vector<std::string> result;
-    std::stringstream ss(str);
-    std::string token;
-    while (std::getline(ss, token, delim)) {
-        result.push_back(token);
-    }
-    return result;
-}
 
 void sendToChannel(Server& server, Client& client, const std::string& target,
                    const std::string& line) {
@@ -52,9 +42,6 @@ void sendToUser(Server& server, Client& client, const std::string& target,
                            client.nick(), target + " :No such nick/channel"));
         return;
     }
-    if (user == &client) {
-        return;
-    }
     server.sendLine(*user, line);
 }
 
@@ -71,13 +58,16 @@ void PrivmsgCommand::execute(Server& server, Client& client,
                            ":No text to send");
     }
 
-    std::vector<std::string> targets = split(msg.param(0), ',');
+    std::vector<std::string> targets = StringUtil::split(msg.param(0), ',');
     std::set<std::string> uniqueTargets;
-    const std::string& text = msg.param(1);
     for (std::vector<std::string>::iterator it = targets.begin();
          it != targets.end(); ++it) {
         const std::string& target = *it;
-        if (!uniqueTargets.insert(target).second) {
+        if (target.empty()) {
+            continue;
+        }
+        const std::string upperTarget = StringUtil::toUpper(target);
+        if (!uniqueTargets.insert(upperTarget).second) {
             server.sendLine(
                 client,
                 Reply::numeric(
@@ -87,9 +77,9 @@ void PrivmsgCommand::execute(Server& server, Client& client,
             continue;
         }
 
-        std::string line =
-            Reply::from(client.prefix(), "PRIVMSG " + target + " :" + text);
-        if (!target.empty() && target[0] == '#') {
+        std::string line = Reply::from(
+            client.prefix(), "PRIVMSG " + target + " :" + msg.param(1));
+        if (target[0] == '#') {
             sendToChannel(server, client, target, line);
         } else {
             sendToUser(server, client, target, line);
