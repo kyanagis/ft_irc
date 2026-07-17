@@ -36,6 +36,7 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("CAP", new CapCommand());
 	registerCommand("QUIT", new QuitCommand());
 	registerCommand("NOTICE", new NoticeCommand());
+	registerCommand("PRIVMSG", new PrivmsgCommand());
 }
 
 CommandDispatcher::~CommandDispatcher() {
