@@ -19,6 +19,7 @@
 #include "Ping.hpp"
 #include "Cap.hpp"
 #include "Quit.hpp"
+#include "Privmsg.hpp"
 #include "Notice.hpp"
 
 CommandDispatcher::CommandDispatcher() {
