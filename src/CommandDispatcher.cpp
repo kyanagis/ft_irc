@@ -21,6 +21,7 @@
 #include "Quit.hpp"
 #include "Privmsg.hpp"
 #include "Notice.hpp"
+#include "Invite.hpp"
 
 CommandDispatcher::CommandDispatcher() {
 	// コマンド担当がここで登録する
@@ -38,6 +39,7 @@ CommandDispatcher::CommandDispatcher() {
 	registerCommand("QUIT", new QuitCommand());
 	registerCommand("NOTICE", new NoticeCommand());
 	registerCommand("PRIVMSG", new PrivmsgCommand());
+	registerCommand("INVITE", new InviteCommand());
 }
 
 CommandDispatcher::~CommandDispatcher() {
