@@ -35,6 +35,8 @@ verify/ircserv_cov
 verify/*.profraw
 verify/*.profdata
 verify/*.dSYM/
+
+.clang-format
 verify/server.log
 # カバレッジ export（CI が生成・失敗時のみアーティファクト回収）
 verify/cov*.json
