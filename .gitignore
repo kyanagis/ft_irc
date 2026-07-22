@@ -48,3 +48,6 @@ verify/leak-*
 verify/slow-unit-*
 
 .clang-format
+
+# direnv のローカルキャッシュ
+.direnv/
