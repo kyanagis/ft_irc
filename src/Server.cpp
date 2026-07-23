@@ -250,6 +250,8 @@ void Server::handleReadable(Client& client) {
 		client.appendInput(buf, static_cast<std::size_t>(n));
 		n = recv(client.fd(), buf, sizeof(buf), 0);
 	}
+	// errno は pumpLines 内の send 等で上書きされる前に確保する
+	int recvErrno = errno;
 
 	int fd = client.fd();
 	pumpLines(client);
@@ -272,6 +274,9 @@ void Server::handleReadable(Client& client) {
 		} else {
 			disconnect(client, "client closed connection");
 		}
+	} else if (n < 0 && recvErrno != EAGAIN && recvErrno != EWOULDBLOCK
+			&& recvErrno != EINTR) {
+		disconnect(client, "recv error");
 	}
 }
 
