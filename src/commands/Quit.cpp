@@ -10,7 +10,7 @@ void QuitCommand::execute(Server& server, Client& client, const Message& msg) {
     if (msg.size() >= 1)
         reason = msg.param(0);
 
-    server.disconnect(client, reason);
+    server.gracefulClose(client, reason);
 }
 
 bool QuitCommand::needsRegistration() const {

@@ -183,6 +183,9 @@ void Server::sweepClients() {
 	for (std::map<int, Client*>::iterator it = _clients.begin();
 			it != _clients.end(); ++it) {
 		Client* client = it->second;
+		if (client->isReadClosed()) {  // 既に切断進行中はスキップ
+			continue;
+		}
 		if (client->outputOverflow()) {
 			overflow.push_back(it->first);
 		} else if (!client->isRegistered()
@@ -200,7 +203,7 @@ void Server::sweepClients() {
 	for (std::size_t i = 0; i < regTimeout.size(); ++i) {
 		std::map<int, Client*>::iterator it = _clients.find(regTimeout[i]);
 		if (it != _clients.end()) {
-			disconnect(*it->second, "registration timeout");
+			gracefulClose(*it->second, "registration timeout");
 		}
 	}
 }
@@ -362,6 +365,10 @@ void Server::pumpLines(Client& client) {
 		if (_clients.find(fd) == _clients.end()) {
 			return;
 		}
+		// QUIT等で猶予切断が始まったら，同パケットの後続行は処理しない
+		if (client.isReadClosed()) {
+			return;
+		}
 	}
 }
 
@@ -395,9 +402,8 @@ void Server::completeRegistration(Client& client) {
 			name + " " + SERVER_VERSION + " o itkol"));
 }
 
-void Server::disconnect(Client& client, const std::string& reason) {
-	int fd = client.fd();
-	// 参加中の各チャンネルへ QUIT を1回ずつ通知（本人は除外）。除去前に流す。
+// 参加中の各チャンネルへ QUIT を1回ずつ通知し，全チャンネルから除去する（本人は除外）。
+void Server::announceQuit(Client& client, const std::string& reason) {
 	const std::string quitLine = Reply::from(client.prefix(), "QUIT :" + reason);
 
 	// 参加中だけでなくinvitedのみのチャンネルにも生ポインタが残るので全走査
@@ -414,13 +420,26 @@ void Server::disconnect(Client& client, const std::string& reason) {
 			++it;
 		}
 	}
+}
 
-	// RFC2812 §3.7.4: 切断前にERRORを当人へ通知．ノンブロッキングfdへベストエフォート
-	// （直後にcloseするので送り切れなくても可）．QUIT応答(§3.1.7)もこれで満たす．
-	const std::string errLine = buildErrorLine(client.host(), reason);
-	(void)send(fd, errLine.c_str(), errLine.size(), 0);
-
+// fdをpollから外して実際に閉じ，Clientを破棄する。以降そのfdは _clients に無い。
+void Server::finalize(Client& client) {
+	int fd = client.fd();
 	_clients.erase(fd);
 	close(fd);
 	delete &client;
+}
+
+// 即時切断。ソケットが死んでいる/送信バッファ満杯でERRORを送れない経路用（ERRORは付けない）。
+void Server::disconnect(Client& client, const std::string& reason) {
+	announceQuit(client, reason);
+	finalize(client);
+}
+
+// 猶予切断: RFC2812 §3.7.4/§3.1.7 の ERROR を _outBuf に積み，POLLOUT で送り切ってから
+// finalize する（N11: 送信は必ずPOLLOUT経由）。読みは止める。QUIT・登録タイムアウト用。
+void Server::gracefulClose(Client& client, const std::string& reason) {
+	announceQuit(client, reason);
+	client.appendOutput(buildErrorLine(client.host(), reason));
+	client.markReadClosed();
 }
