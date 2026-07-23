@@ -40,7 +40,7 @@ public:
 	bool         outputOverflow() const;
 	void         markReadClosed();
 	bool         isReadClosed() const;
-	std::time_t  lastActive() const;
+	std::time_t  connectedAt() const;
 
 	void                         joinChannel(const std::string& name);
 	void                         leaveChannel(const std::string& name);
@@ -63,7 +63,7 @@ private:
 	bool                  _registered;
 	bool                  _readClosed;
 	std::set<std::string> _channels;
-	std::time_t           _lastActive;
+	std::time_t           _connectedAt;
 };
 
 #endif

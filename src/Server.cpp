@@ -22,7 +22,7 @@ namespace {
 	const std::string IRC_CRLF = "\r\n";
 	const std::string SERVER_VERSION = "1.0";
 	const int POLL_TIMEOUT_MS = 1000;       // 掃引を回すためpollは有限待ち
-	const std::time_t REG_TIMEOUT_SEC = 60;  // 未登録が無通信でこの秒数続いたら切断
+	const std::time_t REG_TIMEOUT_SEC = 60;  // connectからこの秒数で登録未完なら切断
 
 	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
 	std::string lowerAscii(const std::string& s) {
@@ -168,7 +168,7 @@ void Server::sweepClients() {
 		if (client->outputOverflow()) {
 			overflow.push_back(it->first);
 		} else if (!client->isRegistered()
-				&& now - client->lastActive() >= REG_TIMEOUT_SEC) {
+				&& now - client->connectedAt() >= REG_TIMEOUT_SEC) {
 			regTimeout.push_back(it->first);
 		}
 	}
