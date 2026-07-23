@@ -105,12 +105,19 @@ bool Client::extractLine(std::string& out) {
 	}
 
 	std::string line = _inBuf.substr(0, pos);
-	if (!line.empty() && line[line.size() - 1] == '\r') {
-		line.erase(line.size() - 1);
+	_inBuf.erase(0, pos + 1);
+
+	// RFC2812 §2.3.1: NUL/CR/LF はメッセージ内に不可．混入分を除去（末尾・埋め込み両方）
+	std::string clean;
+	clean.reserve(line.size());
+	for (std::string::size_type i = 0; i < line.size(); ++i) {
+		char c = line[i];
+		if (c != '\0' && c != '\r') {  // \n は分割で既に無い
+			clean += c;
+		}
 	}
 
-	out = line;
-	_inBuf.erase(0, pos + 1);
+	out = clean;
 	return true;
 }
 
