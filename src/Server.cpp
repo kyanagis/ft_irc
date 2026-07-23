@@ -33,6 +33,24 @@ namespace {
 		}
 		return r;
 	}
+
+	// reason を §2.3.1（NUL/CR/LF不可）で無害化し，§2.3（≤512, CRLF含む）に収めた ERROR 行を作る
+	std::string buildErrorLine(const std::string& host, const std::string& reason) {
+		std::string safe;
+		safe.reserve(reason.size());
+		for (std::string::size_type i = 0; i < reason.size(); ++i) {
+			char c = reason[i];
+			if (c != '\r' && c != '\n' && c != '\0') {
+				safe += c;
+			}
+		}
+		std::string line = "ERROR :Closing Link: " + host + " (" + safe + ")";
+		if (line.size() > 510) {  // 510 = 512 - CRLF
+			line.erase(510);
+		}
+		line += IRC_CRLF;
+		return line;
+	}
 }
 
 volatile sig_atomic_t Server::_running = 0;
@@ -399,8 +417,7 @@ void Server::disconnect(Client& client, const std::string& reason) {
 
 	// RFC2812 §3.7.4: 切断前にERRORを当人へ通知．ノンブロッキングfdへベストエフォート
 	// （直後にcloseするので送り切れなくても可）．QUIT応答(§3.1.7)もこれで満たす．
-	const std::string errLine =
-			"ERROR :Closing Link: " + client.host() + " (" + reason + ")" + IRC_CRLF;
+	const std::string errLine = buildErrorLine(client.host(), reason);
 	(void)send(fd, errLine.c_str(), errLine.size(), 0);
 
 	_clients.erase(fd);
