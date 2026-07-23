@@ -397,6 +397,12 @@ void Server::disconnect(Client& client, const std::string& reason) {
 		}
 	}
 
+	// RFC2812 §3.7.4: 切断前にERRORを当人へ通知．ノンブロッキングfdへベストエフォート
+	// （直後にcloseするので送り切れなくても可）．QUIT応答(§3.1.7)もこれで満たす．
+	const std::string errLine =
+			"ERROR :Closing Link: " + client.host() + " (" + reason + ")" + IRC_CRLF;
+	(void)send(fd, errLine.c_str(), errLine.size(), 0);
+
 	_clients.erase(fd);
 	close(fd);
 	delete &client;
