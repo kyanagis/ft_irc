@@ -584,6 +584,7 @@ static void runClient() {
 static void runChannel() {
 	Client creator(1, "h");
 	Client bob(2, "h");
+	Client stranger(3, "h");   // チャンネルに参加しない非メンバ視点(324 の鍵/上限マスク検証用)
 
 	Channel ch("#c", creator);
 	checkEq(ch.name(), "#c", "channel name");
@@ -633,13 +634,16 @@ static void runChannel() {
 	expect("has key", ch.hasKey());
 	checkEq(ch.key(), "secret", "key value");
 	checkEq(ch.modeString(creator), "+itk secret", "modeString +itk");
+	checkEq(ch.modeString(stranger), "+itk *", "modeString +itk key masked (non-member)");
 	ch.setLimit(5);
 	expect("has limit", ch.hasLimit());
 	expect("limit 5", ch.limit() == 5);
 	checkEq(ch.modeString(creator), "+itkl secret 5", "modeString +itkl");
+	checkEq(ch.modeString(stranger), "+itkl * *", "modeString +itkl key/limit masked (non-member)");
 	ch.clearKey();
 	expect("key cleared", !ch.hasKey());
 	checkEq(ch.modeString(creator), "+itl 5", "modeString +itl");
+	checkEq(ch.modeString(stranger), "+itl *", "modeString +itl limit masked (non-member)");
 	ch.clearLimit();
 	expect("limit cleared", !ch.hasLimit());
 	checkEq(ch.modeString(creator), "+it", "modeString back to +it");
