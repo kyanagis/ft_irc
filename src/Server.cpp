@@ -327,6 +327,10 @@ void Server::handleReadable(Client& client) {
 	if (_clients.find(fd) == _clients.end()) {
 		return;
 	}
+	// QUIT等で猶予切断が始まったら，残りの入力/EOF処理はせず flush→finalize に任せる
+	if (client.isReadClosed()) {
+		return;
+	}
 
 	if (client.inputOverflow()) {
 		disconnect(client, "input line too long");
