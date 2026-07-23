@@ -19,7 +19,8 @@ Client::Client(int fd, const std::string& host)
 			_registered(false),
 			_readClosed(false),
 			_channels(),
-			_connectedAt(std::time(0)) {
+			_connectedAt(std::time(0)),
+			_closingSince(0) {
 }
 
 int Client::fd() const {
@@ -135,6 +136,9 @@ bool Client::outputOverflow() const {
 }
 
 void Client::markReadClosed() {
+	if (!_readClosed) {
+		_closingSince = std::time(0);
+	}
 	_readClosed = true;
 }
 
@@ -144,6 +148,9 @@ bool Client::isReadClosed() const {
 
 std::time_t Client::connectedAt() const {
 	return _connectedAt;
+}
+std::time_t Client::closingSince() const {
+	return _closingSince;
 }
 
 void Client::joinChannel(const std::string& name) {

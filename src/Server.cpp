@@ -23,6 +23,7 @@ namespace {
 	const std::string SERVER_VERSION = "1.0";
 	const int POLL_TIMEOUT_MS = 1000;       // 掃引を回すためpollは有限待ち
 	const std::time_t REG_TIMEOUT_SEC = 60;  // connectからこの秒数で登録未完なら切断
+	const std::time_t CLOSE_TIMEOUT_SEC = 10;  // 猶予切断のflushがこの秒数で終わらなければ強制finalize
 
 	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
 	std::string lowerAscii(const std::string& s) {
@@ -180,10 +181,15 @@ void Server::sweepClients() {
 	std::time_t now = std::time(0);
 	std::vector<int> overflow;
 	std::vector<int> regTimeout;
+	std::vector<int> staleClose;
 	for (std::map<int, Client*>::iterator it = _clients.begin();
 			it != _clients.end(); ++it) {
 		Client* client = it->second;
-		if (client->isReadClosed()) {  // 既に切断進行中はスキップ
+		if (client->isReadClosed()) {
+			// 猶予切断中: flushがCLOSE_TIMEOUT_SECで終わらなければ強制finalize（リンガーfd有界化）
+			if (now - client->closingSince() >= CLOSE_TIMEOUT_SEC) {
+				staleClose.push_back(it->first);
+			}
 			continue;
 		}
 		if (client->outputOverflow()) {
@@ -204,6 +210,13 @@ void Server::sweepClients() {
 		std::map<int, Client*>::iterator it = _clients.find(regTimeout[i]);
 		if (it != _clients.end()) {
 			gracefulClose(*it->second, "registration timeout");
+		}
+	}
+	// flushできずに居座る猶予切断中クライアントを強制切断（disconnectは未通知のEOFにも対応）
+	for (std::size_t i = 0; i < staleClose.size(); ++i) {
+		std::map<int, Client*>::iterator it = _clients.find(staleClose[i]);
+		if (it != _clients.end()) {
+			disconnect(*it->second, "close timeout");
 		}
 	}
 }
