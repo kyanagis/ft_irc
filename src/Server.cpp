@@ -21,6 +21,8 @@ namespace {
 	const std::size_t READ_CHUNK = 4096;
 	const std::string IRC_CRLF = "\r\n";
 	const std::string SERVER_VERSION = "1.0";
+	const int POLL_TIMEOUT_MS = 1000;       // 掃引を回すためpollは有限待ち
+	const std::time_t REG_TIMEOUT_SEC = 60;  // 未登録が無通信でこの秒数続いたら切断
 
 	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
 	std::string lowerAscii(const std::string& s) {
@@ -154,6 +156,37 @@ void Server::rebuildPollFds() {
 	}
 }
 
+// poll1周ごとに全クライアントを掃引．出力上限超過（#43）と未登録タイムアウト（#44）を切断．
+// POLLINが来ない純受信クライアントもここで確実に掃引される．
+void Server::sweepClients() {
+	std::time_t now = std::time(0);
+	std::vector<int> overflow;
+	std::vector<int> regTimeout;
+	for (std::map<int, Client*>::iterator it = _clients.begin();
+			it != _clients.end(); ++it) {
+		Client* client = it->second;
+		if (client->outputOverflow()) {
+			overflow.push_back(it->first);
+		} else if (!client->isRegistered()
+				&& now - client->lastActive() >= REG_TIMEOUT_SEC) {
+			regTimeout.push_back(it->first);
+		}
+	}
+	// disconnectは_clientsを変更するので走査後にまとめて実施
+	for (std::size_t i = 0; i < overflow.size(); ++i) {
+		std::map<int, Client*>::iterator it = _clients.find(overflow[i]);
+		if (it != _clients.end()) {
+			disconnect(*it->second, "send queue exceeded");
+		}
+	}
+	for (std::size_t i = 0; i < regTimeout.size(); ++i) {
+		std::map<int, Client*>::iterator it = _clients.find(regTimeout[i]);
+		if (it != _clients.end()) {
+			disconnect(*it->second, "registration timeout");
+		}
+	}
+}
+
 void Server::run() {
 	setup();
 	_running = 1;
@@ -166,7 +199,7 @@ void Server::run() {
 		rebuildPollFds();
 
 		nfds_t nfds = static_cast<nfds_t>(_pollfds.size());
-		int ready = poll(&_pollfds[0], nfds, -1);
+		int ready = poll(&_pollfds[0], nfds, POLL_TIMEOUT_MS);
 		if (ready < 0) {
 			if (errno == EINTR) {
 				continue;
@@ -222,6 +255,8 @@ void Server::run() {
 			}
 			// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 		}
+
+		sweepClients();
 	}
 }
 

@@ -48,6 +48,7 @@ private:
 	void handleWritable(Client& client);
 	void pumpLines(Client& client);
 	void rebuildPollFds();
+	void sweepClients();
 
 	Socket                          _listen;
 	int                             _port;
