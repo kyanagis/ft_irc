@@ -26,6 +26,7 @@ public:
 	Channel* getOrCreateChannel(const std::string& name, Client& creator);
 	void     removeEmptyChannel(Channel* channel);
 	void     disconnect(Client& client, const std::string& reason);
+	void     gracefulClose(Client& client, const std::string& reason);
 	void     queueMessage(Client& client, const std::string& message);
 	void     sendLine(Client& client, const std::string& line);
 
@@ -48,6 +49,9 @@ private:
 	void handleWritable(Client& client);
 	void pumpLines(Client& client);
 	void rebuildPollFds();
+	void sweepClients();
+	void announceQuit(Client& client, const std::string& reason);
+	void finalize(Client& client);
 
 	Socket                          _listen;
 	int                             _port;
