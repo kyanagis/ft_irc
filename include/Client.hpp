@@ -4,6 +4,7 @@
 #include <string>
 #include <set>
 #include <cstddef>
+#include <ctime>
 
 class Client
 {
@@ -39,6 +40,7 @@ public:
 	bool         outputOverflow() const;
 	void         markReadClosed();
 	bool         isReadClosed() const;
+	std::time_t  lastActive() const;
 
 	void                         joinChannel(const std::string& name);
 	void                         leaveChannel(const std::string& name);
@@ -61,6 +63,7 @@ private:
 	bool                  _registered;
 	bool                  _readClosed;
 	std::set<std::string> _channels;
+	std::time_t           _lastActive;
 };
 
 #endif
