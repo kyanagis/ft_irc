@@ -284,9 +284,11 @@ void Server::handleWritable(Client& client) {
 	ssize_t n = send(client.fd(), out.c_str(), out.size(), 0);
 	if (n > 0) {
 		out.erase(0, static_cast<std::size_t>(n));
-	} else {
-		disconnect(client, "send failed");
+	} else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK
+			&& errno != EINTR) {
+		disconnect(client, "send error");
 	}
+	// EAGAIN/EWOULDBLOCK/EINTR と n==0 はバッファ保持で次の POLLOUT に回す
 }
 
 void Server::pumpLines(Client& client) {
