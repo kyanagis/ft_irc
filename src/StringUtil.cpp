@@ -63,3 +63,11 @@ std::string StringUtil::toString(long value) {
 	oss << value;
 	return oss.str();
 }
+
+// RFC2812 §2.3: 1メッセージはCRLF含め512バイト以下．本体は510までに切り詰める
+std::string StringUtil::capLine(const std::string& line) {
+	if (line.size() > 510) {
+		return line.substr(0, 510);
+	}
+	return line;
+}

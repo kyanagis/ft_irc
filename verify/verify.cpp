@@ -466,6 +466,11 @@ static void runStringUtil() {
 	checkEq(StringUtil::toString(-5), "-5", "toString neg");
 	checkEq(StringUtil::toString(2147483647L), "2147483647", "toString max32");
 
+	// capLine（RFC2812 §2.3）: 510以下はそのまま、超過は510に切り詰め
+	checkEq(StringUtil::capLine("short"), "short", "capLine <=510 passthrough");
+	expect("capLine >510 truncated to 510",
+			StringUtil::capLine(std::string(600, 'x')).size() == 510);
+
 	std::printf("units: StringUtil ok\n");
 }
 
