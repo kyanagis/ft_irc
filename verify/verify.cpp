@@ -549,11 +549,18 @@ static void runClient() {
 		checkEq(d.host(), "h", "host getter");      // getter 網羅
 		expect("no pending out", !d.hasPendingOutput());
 		expect("not read-closed", !d.isReadClosed());
+		expect("connectedAt set at ctor", d.connectedAt() > 0);  // connectedAt getter 網羅
+		expect("closingSince zero before close", d.closingSince() == 0);
 		d.appendOutput("xx");
 		expect("has pending out", d.hasPendingOutput());
 		checkEq(d.outBuffer(), "xx", "outBuffer");
-		d.markReadClosed();
+		d.markReadClosed();                         // !_readClosed True 分岐
 		expect("read closed", d.isReadClosed());
+		expect("closingSince set after close", d.closingSince() > 0);  // closingSince getter 網羅
+		std::time_t cs = d.closingSince();
+		d.markReadClosed();                         // 2回目: !_readClosed False 分岐
+		expect("still read closed", d.isReadClosed());
+		expect("closingSince unchanged on 2nd close", d.closingSince() == cs);
 
 		Client e(5, "h");
 		expect("no input overflow when empty", !e.inputOverflow());  // size<=512 の False 分岐
