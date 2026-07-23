@@ -417,6 +417,10 @@ void Server::completeRegistration(Client& client) {
 			":This server was created " + _createdAt));
 	sendLine(client, Reply::numeric(name, Reply::RPL_MYINFO, nick,
 			name + " " + SERVER_VERSION + " o itkol"));
+	// 005 ISUPPORT: 照合はASCII固定なのでCASEMAPPING=asciiを明示（鍵+kはcase-sensitiveのまま）
+	sendLine(client, Reply::numeric(name, Reply::RPL_ISUPPORT, nick,
+			"CASEMAPPING=ascii CHANTYPES=# CHANMODES=,k,l,it PREFIX=(o)@ "
+			"CHANNELLEN=50 NICKLEN=9 :are supported by this server"));
 }
 
 // 参加中の各チャンネルへ QUIT を1回ずつ通知し，全チャンネルから除去する（本人は除外）。
