@@ -250,6 +250,8 @@ void Server::handleReadable(Client& client) {
 		client.appendInput(buf, static_cast<std::size_t>(n));
 		n = recv(client.fd(), buf, sizeof(buf), 0);
 	}
+	// errno は pumpLines 内の send 等で上書きされる前に確保する
+	int recvErrno = errno;
 
 	int fd = client.fd();
 	pumpLines(client);
@@ -272,6 +274,9 @@ void Server::handleReadable(Client& client) {
 		} else {
 			disconnect(client, "client closed connection");
 		}
+	} else if (n < 0 && recvErrno != EAGAIN && recvErrno != EWOULDBLOCK
+			&& recvErrno != EINTR) {
+		disconnect(client, "recv error");
 	}
 }
 
@@ -284,9 +289,11 @@ void Server::handleWritable(Client& client) {
 	ssize_t n = send(client.fd(), out.c_str(), out.size(), 0);
 	if (n > 0) {
 		out.erase(0, static_cast<std::size_t>(n));
-	} else {
-		disconnect(client, "send failed");
+	} else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK
+			&& errno != EINTR) {
+		disconnect(client, "send error");
 	}
+	// EAGAIN/EWOULDBLOCK/EINTR と n==0 はバッファ保持で次の POLLOUT に回す
 }
 
 void Server::pumpLines(Client& client) {
