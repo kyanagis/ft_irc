@@ -19,7 +19,7 @@ Client::Client(int fd, const std::string& host)
 			_registered(false),
 			_readClosed(false),
 			_channels(),
-			_lastActive(std::time(0)) {
+			_connectedAt(std::time(0)) {
 }
 
 int Client::fd() const {
@@ -95,7 +95,6 @@ std::string Client::prefix() const {
 
 void Client::appendInput(const char* data, std::size_t n) {
 	_inBuf.append(data, n);
-	_lastActive = std::time(0);
 }
 
 bool Client::extractLine(std::string& out) {
@@ -143,8 +142,8 @@ bool Client::isReadClosed() const {
 	return _readClosed;
 }
 
-std::time_t Client::lastActive() const {
-	return _lastActive;
+std::time_t Client::connectedAt() const {
+	return _connectedAt;
 }
 
 void Client::joinChannel(const std::string& name) {
