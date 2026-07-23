@@ -21,6 +21,7 @@ public:
 	static const int ERR_CANNOTSENDTOCHAN = 404;
 	static const int ERR_TOOMANYTARGETS   = 407;
 	static const int ERR_INVALIDCAPCMD	  = 410;
+	static const int ERR_NOORIGIN		  = 409;
 	static const int ERR_NORECIPIENT      = 411;
 	static const int ERR_NOTEXTTOSEND     = 412;
 	static const int ERR_UNKNOWNCOMMAND   = 421;
