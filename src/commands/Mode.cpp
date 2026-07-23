@@ -114,23 +114,24 @@ namespace {
 	}
 
 	// 1モードフラグの消費規則(引数要否・値検証・失敗時numeric)を表すテーブル1行
+	// ※フィールドは padding 最小化のため型の大きい順に並べる(clang-tidy optin.performance.Padding)
 	struct ModeSpec {
+		ModeValidateFn validate;     // 文字列だけの値検証(不要なら 0)。k/l が非0
+		const char*    badArgDetail; // validate 失敗時メッセージ(":..." 形式)
+		int            badArgReply;  // validate 失敗時 numeric
 		char           flag;
 		bool           argOnSet;     // +flag が1引数を取るか
 		bool           argOnUnset;   // -flag が1引数を取るか
-		ModeValidateFn validate;     // 文字列だけの値検証(不要なら 0)。k/l が非0
-		int            badArgReply;  // validate 失敗時 numeric
-		const char*    badArgDetail; // validate 失敗時メッセージ(":..." 形式)
 	};
 
 	// モード消費規則の唯一の真実源(i,t=引数なし / k=+-両引数 / l=+のみ引数 / o=+-両引数)
 	static const ModeSpec kModeTable[] = {
-		// flag argOnSet argOnUnset validate      badArgReply                badArgDetail
-		{ 'i', false,   false,      0,            0,                         0 },
-		{ 't', false,   false,      0,            0,                         0 },
-		{ 'k', true,    true,       &validateKey, Reply::ERR_NEEDMOREPARAMS, ":Invalid channel key" },
-		{ 'l', true,    false,      &validateLimit, 0,                       0 }, // badArgReply=0 → 値不正は無音スキップ
-		{ 'o', true,    true,       0,            0,                         0 },
+		// validate        badArgDetail            badArgReply                flag argOnSet argOnUnset
+		{ 0,              0,                      0,                         'i', false,   false },
+		{ 0,              0,                      0,                         't', false,   false },
+		{ &validateKey,   ":Invalid channel key", Reply::ERR_NEEDMOREPARAMS, 'k', true,    true  },
+		{ &validateLimit, 0,                      0,                         'l', true,    false }, // badArgReply=0 → 値不正は無音スキップ
+		{ 0,              0,                      0,                         'o', true,    true  },
 	};
 	static const std::size_t kModeTableSize = sizeof(kModeTable) / sizeof(kModeTable[0]);
 
