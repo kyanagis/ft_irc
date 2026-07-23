@@ -21,6 +21,9 @@ namespace {
 	const std::size_t READ_CHUNK = 4096;
 	const std::string IRC_CRLF = "\r\n";
 	const std::string SERVER_VERSION = "1.0";
+	const int POLL_TIMEOUT_MS = 1000;       // 掃引を回すためpollは有限待ち
+	const std::time_t REG_TIMEOUT_SEC = 60;  // connectからこの秒数で登録未完なら切断
+	const std::time_t CLOSE_TIMEOUT_SEC = 10;  // 猶予切断のflushがこの秒数で終わらなければ強制finalize
 
 	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
 	std::string lowerAscii(const std::string& s) {
@@ -30,6 +33,24 @@ namespace {
 					std::tolower(static_cast<unsigned char>(r[i])));
 		}
 		return r;
+	}
+
+	// reason を §2.3.1（NUL/CR/LF不可）で無害化し，§2.3（≤512, CRLF含む）に収めた ERROR 行を作る
+	std::string buildErrorLine(const std::string& host, const std::string& reason) {
+		std::string safe;
+		safe.reserve(reason.size());
+		for (std::string::size_type i = 0; i < reason.size(); ++i) {
+			char c = reason[i];
+			if (c != '\r' && c != '\n' && c != '\0') {
+				safe += c;
+			}
+		}
+		std::string line = "ERROR :Closing Link: " + host + " (" + safe + ")";
+		if (line.size() > 510) {  // 510 = 512 - CRLF
+			line.erase(510);
+		}
+		line += IRC_CRLF;
+		return line;
 	}
 }
 
@@ -154,6 +175,52 @@ void Server::rebuildPollFds() {
 	}
 }
 
+// poll1周ごとに全クライアントを掃引．出力上限超過（#43）と未登録タイムアウト（#44）を切断．
+// POLLINが来ない純受信クライアントもここで確実に掃引される．
+void Server::sweepClients() {
+	std::time_t now = std::time(0);
+	std::vector<int> overflow;
+	std::vector<int> regTimeout;
+	std::vector<int> staleClose;
+	for (std::map<int, Client*>::iterator it = _clients.begin();
+			it != _clients.end(); ++it) {
+		Client* client = it->second;
+		if (client->isReadClosed()) {
+			// 猶予切断中: flushがCLOSE_TIMEOUT_SECで終わらなければ強制finalize（リンガーfd有界化）
+			if (now - client->closingSince() >= CLOSE_TIMEOUT_SEC) {
+				staleClose.push_back(it->first);
+			}
+			continue;
+		}
+		if (client->outputOverflow()) {
+			overflow.push_back(it->first);
+		} else if (!client->isRegistered()
+				&& now - client->connectedAt() >= REG_TIMEOUT_SEC) {
+			regTimeout.push_back(it->first);
+		}
+	}
+	// disconnectは_clientsを変更するので走査後にまとめて実施
+	for (std::size_t i = 0; i < overflow.size(); ++i) {
+		std::map<int, Client*>::iterator it = _clients.find(overflow[i]);
+		if (it != _clients.end()) {
+			disconnect(*it->second, "send queue exceeded");
+		}
+	}
+	for (std::size_t i = 0; i < regTimeout.size(); ++i) {
+		std::map<int, Client*>::iterator it = _clients.find(regTimeout[i]);
+		if (it != _clients.end()) {
+			gracefulClose(*it->second, "registration timeout");
+		}
+	}
+	// flushできずに居座る猶予切断中クライアントを強制切断（disconnectは未通知のEOFにも対応）
+	for (std::size_t i = 0; i < staleClose.size(); ++i) {
+		std::map<int, Client*>::iterator it = _clients.find(staleClose[i]);
+		if (it != _clients.end()) {
+			disconnect(*it->second, "close timeout");
+		}
+	}
+}
+
 void Server::run() {
 	setup();
 	_running = 1;
@@ -166,7 +233,7 @@ void Server::run() {
 		rebuildPollFds();
 
 		nfds_t nfds = static_cast<nfds_t>(_pollfds.size());
-		int ready = poll(&_pollfds[0], nfds, -1);
+		int ready = poll(&_pollfds[0], nfds, POLL_TIMEOUT_MS);
 		if (ready < 0) {
 			if (errno == EINTR) {
 				continue;
@@ -222,6 +289,8 @@ void Server::run() {
 			}
 			// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 		}
+
+		sweepClients();
 	}
 }
 
@@ -256,6 +325,10 @@ void Server::handleReadable(Client& client) {
 	int fd = client.fd();
 	pumpLines(client);
 	if (_clients.find(fd) == _clients.end()) {
+		return;
+	}
+	// QUIT等で猶予切断が始まったら，残りの入力/EOF処理はせず flush→finalize に任せる
+	if (client.isReadClosed()) {
 		return;
 	}
 
@@ -309,6 +382,10 @@ void Server::pumpLines(Client& client) {
 		if (_clients.find(fd) == _clients.end()) {
 			return;
 		}
+		// QUIT等で猶予切断が始まったら，同パケットの後続行は処理しない
+		if (client.isReadClosed()) {
+			return;
+		}
 	}
 }
 
@@ -342,9 +419,8 @@ void Server::completeRegistration(Client& client) {
 			name + " " + SERVER_VERSION + " o itkol"));
 }
 
-void Server::disconnect(Client& client, const std::string& reason) {
-	int fd = client.fd();
-	// 参加中の各チャンネルへ QUIT を1回ずつ通知（本人は除外）。除去前に流す。
+// 参加中の各チャンネルへ QUIT を1回ずつ通知し，全チャンネルから除去する（本人は除外）。
+void Server::announceQuit(Client& client, const std::string& reason) {
 	const std::string quitLine = Reply::from(client.prefix(), "QUIT :" + reason);
 
 	// 参加中だけでなくinvitedのみのチャンネルにも生ポインタが残るので全走査
@@ -361,8 +437,26 @@ void Server::disconnect(Client& client, const std::string& reason) {
 			++it;
 		}
 	}
+}
 
+// fdをpollから外して実際に閉じ，Clientを破棄する。以降そのfdは _clients に無い。
+void Server::finalize(Client& client) {
+	int fd = client.fd();
 	_clients.erase(fd);
 	close(fd);
 	delete &client;
+}
+
+// 即時切断。ソケットが死んでいる/送信バッファ満杯でERRORを送れない経路用（ERRORは付けない）。
+void Server::disconnect(Client& client, const std::string& reason) {
+	announceQuit(client, reason);
+	finalize(client);
+}
+
+// 猶予切断: RFC2812 §3.7.4/§3.1.7 の ERROR を _outBuf に積み，POLLOUT で送り切ってから
+// finalize する（N11: 送信は必ずPOLLOUT経由）。読みは止める。QUIT・登録タイムアウト用。
+void Server::gracefulClose(Client& client, const std::string& reason) {
+	announceQuit(client, reason);
+	client.appendOutput(buildErrorLine(client.host(), reason));
+	client.markReadClosed();
 }
