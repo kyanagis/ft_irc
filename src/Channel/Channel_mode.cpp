@@ -53,7 +53,9 @@ void Channel::clearLimit() {
 	_hasLimit = false;
 }
 
-std::string Channel::modeString() const {
+// 324応答の本文を組み立てる。非メンバには鍵・上限の値を '*' でマスクする(RFC2811 §4.2.9/§4.2.10)
+std::string Channel::modeString(Client& viewer) const {
+	bool viewerIsMember = hasMember(viewer);
 	std::string flags = "+";
 	std::string params;
 
@@ -63,11 +65,17 @@ std::string Channel::modeString() const {
 		flags += "t";
 	if (_hasKey == true) {
 		flags += "k";
-		params += " " + _key;
+		if (viewerIsMember == true)
+			params += " " + _key;
+		else
+			params += " *";
 	}
 	if (_hasLimit == true) {
 		flags += "l";
-		params += " " + StringUtil::toString(static_cast<long>(_limit));
+		if (viewerIsMember == true)
+			params += " " + StringUtil::toString(static_cast<long>(_limit));
+		else
+			params += " *";
 	}
 	return flags + params;
 }

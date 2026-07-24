@@ -584,6 +584,7 @@ static void runClient() {
 static void runChannel() {
 	Client creator(1, "h");
 	Client bob(2, "h");
+	Client stranger(3, "h");   // チャンネルに参加しない非メンバ視点(324 の鍵/上限マスク検証用)
 
 	Channel ch("#c", creator);
 	checkEq(ch.name(), "#c", "channel name");
@@ -592,7 +593,7 @@ static void runChannel() {
 	expect("count 1", ch.memberCount() == 1);
 	expect("not empty", !ch.isEmpty());
 	expect("creator joined set", creator.channels().count("#c") == 1);
-	checkEq(ch.modeString(), "+", "modeString empty");
+	checkEq(ch.modeString(creator), "+", "modeString empty");
 
 	// membership
 	ch.addMember(bob);
@@ -628,21 +629,24 @@ static void runChannel() {
 	ch.setTopicLocked(true);
 	expect("inviteOnly getter", ch.inviteOnly());     // getter 網羅
 	expect("topicLocked getter", ch.topicLocked());   // getter 網羅
-	checkEq(ch.modeString(), "+it", "modeString +it");
+	checkEq(ch.modeString(creator), "+it", "modeString +it");
 	ch.setKey("secret");
 	expect("has key", ch.hasKey());
 	checkEq(ch.key(), "secret", "key value");
-	checkEq(ch.modeString(), "+itk secret", "modeString +itk");
+	checkEq(ch.modeString(creator), "+itk secret", "modeString +itk");
+	checkEq(ch.modeString(stranger), "+itk *", "modeString +itk key masked (non-member)");
 	ch.setLimit(5);
 	expect("has limit", ch.hasLimit());
 	expect("limit 5", ch.limit() == 5);
-	checkEq(ch.modeString(), "+itkl secret 5", "modeString +itkl");
+	checkEq(ch.modeString(creator), "+itkl secret 5", "modeString +itkl");
+	checkEq(ch.modeString(stranger), "+itkl * *", "modeString +itkl key/limit masked (non-member)");
 	ch.clearKey();
 	expect("key cleared", !ch.hasKey());
-	checkEq(ch.modeString(), "+itl 5", "modeString +itl");
+	checkEq(ch.modeString(creator), "+itl 5", "modeString +itl");
+	checkEq(ch.modeString(stranger), "+itl *", "modeString +itl limit masked (non-member)");
 	ch.clearLimit();
 	expect("limit cleared", !ch.hasLimit());
-	checkEq(ch.modeString(), "+it", "modeString back to +it");
+	checkEq(ch.modeString(creator), "+it", "modeString back to +it");
 
 	// broadcast: except=0 は全員、except=&creator は creator を除外（Channel_broadcast 網羅）
 	{

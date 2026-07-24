@@ -42,7 +42,7 @@ public:
 	bool hasLimit() const;     std::size_t limit() const;
 	void setLimit(std::size_t limit);  void clearLimit();
 
-	std::string modeString() const;
+	std::string modeString(Client& viewer) const;
 
 private:
 	Channel(const Channel&);
