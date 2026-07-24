@@ -52,6 +52,7 @@ private:
 	void sweepClients();
 	void announceQuit(Client& client, const std::string& reason);
 	void finalize(Client& client);
+	void dropQuietly(Client& client);
 
 	Socket                          _listen;
 	int                             _port;
