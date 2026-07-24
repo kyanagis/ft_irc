@@ -25,6 +25,7 @@ namespace {
 	const int POLL_TIMEOUT_MS = 1000;       // 掃引を回すためpollは有限待ち
 	const std::time_t REG_TIMEOUT_SEC = 60;  // connectからこの秒数で登録未完なら切断
 	const std::time_t CLOSE_TIMEOUT_SEC = 10;  // 猶予切断のflushがこの秒数で終わらなければ強制finalize
+	const int MAX_ACCEPT = 16;
 
 	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
 	std::string lowerAscii(const std::string& s) {
@@ -297,19 +298,22 @@ void Server::run() {
 
 void Server::acceptClient() {
 	std::string host;
-	int fd = _listen.acceptClient(host);
-	while (fd >= 0) {
+	int accepted = 0;
+	while (accepted < MAX_ACCEPT) {
+		int fd = _listen.acceptClient(host);
+		if (fd < 0 ) {
+			break;
+		}
 		Client* client = 0;
 		try {
 			client = new Client(fd, host);
 		}
 		catch (...) {
 			close(fd);
-			fd = _listen.acceptClient(host);
 			continue;
 		}
 		_clients[fd] = client;
-		fd = _listen.acceptClient(host);
+		accepted++;
 	}
 }
 
