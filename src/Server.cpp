@@ -299,20 +299,21 @@ void Server::run() {
 void Server::acceptClient() {
 	std::string host;
 	int accepted = 0;
-	int fd = _listen.acceptClient(host);
-	while (fd >= 0 && accepted < MAX_ACCEPT) {
+	while (accepted < MAX_ACCEPT) {
+		int fd = _listen.acceptClient(host);
+		if (fd < 0 ) {
+			break;
+		}
 		Client* client = 0;
 		try {
 			client = new Client(fd, host);
 		}
 		catch (...) {
 			close(fd);
-			fd = _listen.acceptClient(host);
 			continue;
 		}
 		_clients[fd] = client;
 		accepted++;
-		fd = _listen.acceptClient(host);
 	}
 }
 
