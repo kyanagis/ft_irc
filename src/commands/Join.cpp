@@ -53,18 +53,36 @@ namespace {
 		return true;
 	}
 
-	std::string buildNamesList(Channel& channel) {
+	// RPL_NAMREPLY(353) を、各 numeric 行が512(CRLF含む)以下に収まるよう複数の detail に分割する。
+	// 1行に全員詰めると多人数チャンネルで512超→末尾が切れてメンバーが欠落するため。
+	std::vector<std::string> buildNameReplies(Server& server, Client& client,
+			Channel& channel) {
+		const std::string head = "= " + channel.name() + " :";
+		const std::string::size_type lineMax = 510;  // 512 - CRLF
+		const std::string::size_type overhead = Reply::numeric(
+				server.serverName(), Reply::RPL_NAMREPLY, client.nick(), head).size();
+		const std::string::size_type budget = (lineMax > overhead) ? lineMax - overhead : 1;
+
+		std::vector<std::string> lines;
 		std::string names;
 		const std::set<Client*>& members = channel.members();
 		for (std::set<Client*>::const_iterator it = members.begin();
 		     it != members.end(); ++it) {
-			if (!names.empty())
-				names += " ";
+			std::string tok = (*it)->nick();
 			if (channel.isOperator(**it))
-				names += "@";
-			names += (*it)->nick();
+				tok = "@" + tok;
+			std::string::size_type addLen = names.empty() ? tok.size() : tok.size() + 1;
+			if (!names.empty() && names.size() + addLen > budget) {
+				lines.push_back(head + names);
+				names = tok;
+			} else {
+				if (!names.empty())
+					names += " ";
+				names += tok;
+			}
 		}
-		return names;
+		lines.push_back(head + names);
+		return lines;
 	}
 
 	void sendJoinReplies(Server& server, Client& joiner, Channel& channel) {
@@ -78,8 +96,10 @@ namespace {
 					channel.name() + " :No topic is set");
 		}
 
-		sendNumeric(server, joiner, Reply::RPL_NAMREPLY,
-				"= " + channel.name() + " :" + buildNamesList(channel));
+		std::vector<std::string> nameLines = buildNameReplies(server, joiner, channel);
+		for (std::size_t i = 0; i < nameLines.size(); ++i) {
+			sendNumeric(server, joiner, Reply::RPL_NAMREPLY, nameLines[i]);
+		}
 		sendNumeric(server, joiner, Reply::RPL_ENDOFNAMES,
 				channel.name() + " :End of /NAMES list");
 	}

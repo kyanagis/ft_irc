@@ -18,7 +18,8 @@ namespace {
 			}
 		}
 		long value = std::strtol(s.c_str(), 0, 10);
-		if (value < 1 || value > 65535) {
+		// RFC6335/IANA: 0-1023はSystem Ports（bindに特権が必要）．非特権のUser Port以上のみ許可
+		if (value < 1024 || value > 65535) {
 			return false;
 		}
 		out = static_cast<int>(value);
@@ -34,7 +35,7 @@ int main(int argc, char** argv) {
 
 	int port;
 	if (!parsePort(argv[1], port)) {
-		std::cerr << "Error: port must be an integer in [1, 65535]"
+		std::cerr << "Error: port must be an integer in [1024, 65535]"
 				<< std::endl;
 		return 1;
 	}
