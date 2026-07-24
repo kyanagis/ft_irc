@@ -466,6 +466,11 @@ static void runStringUtil() {
 	checkEq(StringUtil::toString(-5), "-5", "toString neg");
 	checkEq(StringUtil::toString(2147483647L), "2147483647", "toString max32");
 
+	// capLine（RFC2812 §2.3）: 510以下はそのまま、超過は510に切り詰め
+	checkEq(StringUtil::capLine("short"), "short", "capLine <=510 passthrough");
+	expect("capLine >510 truncated to 510",
+			StringUtil::capLine(std::string(600, 'x')).size() == 510);
+
 	std::printf("units: StringUtil ok\n");
 }
 
@@ -497,8 +502,8 @@ static void runClient() {
 		feedAndExpectLines("A\r\nB\n", e3, 2);          // 複数行
 		const char* e4[] = { "" };
 		feedAndExpectLines("\r\n", e4, 1);              // 空行
-		const char* e5[] = { "X\rY" };
-		feedAndExpectLines("X\rY\n", e5, 1);            // 末尾以外のCRは保持
+		const char* e5[] = { "XY" };
+		feedAndExpectLines("X\rY\n", e5, 1);            // 埋め込みCRも除去（§2.3.1）
 		const char* e6[] = { "" };
 		feedAndExpectLines("\n", e6, 1);                // bare LF 空行（!line.empty() の False 分岐）
 	}
@@ -511,6 +516,15 @@ static void runClient() {
 		c.appendInput("C\r\n", 3);
 		expect("partial: line completes", c.extractLine(line));
 		checkEq(line, "ABC", "partial reassembled");
+	}
+	// NUL/CR 除去（RFC2812 §2.3.1）。通常文字/NUL/CR の3種で mcdc 網羅
+	{
+		Client c(-1, "h");
+		std::string line;
+		const char raw[] = "A\0BC\r\n";        // A NUL B C CR LF
+		c.appendInput(raw, sizeof(raw) - 1);   // 6 bytes（末尾の実NUL終端は除く）
+		expect("nul/cr line completes", c.extractLine(line));
+		checkEq(line, "ABC", "nul and cr stripped");
 	}
 	// 登録ステートマシン
 	{
