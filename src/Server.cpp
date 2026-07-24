@@ -16,6 +16,7 @@
 #include "Client.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
+#include "StringUtil.hpp"
 
 namespace {
 	const std::size_t READ_CHUNK = 4096;
@@ -395,7 +396,7 @@ void Server::queueMessage(Client& client, const std::string& message) {
 
 // 1行をCRLF終端で送信キューへ積む。コマンドはこちらを使う（queueMessageは生バイト用）
 void Server::sendLine(Client& client, const std::string& line) {
-	client.appendOutput(line + IRC_CRLF);
+	client.appendOutput(StringUtil::capLine(line) + IRC_CRLF);
 }
 
 // PASS/NICK/USER が処理後に呼ぶ共通ロジック。pass/nick/user が揃うまでは何もしない。
@@ -417,6 +418,10 @@ void Server::completeRegistration(Client& client) {
 			":This server was created " + _createdAt));
 	sendLine(client, Reply::numeric(name, Reply::RPL_MYINFO, nick,
 			name + " " + SERVER_VERSION + " o itkol"));
+	// 005 ISUPPORT: 照合はASCII固定なのでCASEMAPPING=asciiを明示（鍵+kはcase-sensitiveのまま）
+	sendLine(client, Reply::numeric(name, Reply::RPL_ISUPPORT, nick,
+			"CASEMAPPING=ascii CHANTYPES=# CHANMODES=,k,l,it PREFIX=(o)@ "
+			"CHANNELLEN=50 NICKLEN=9 :are supported by this server"));
 }
 
 // 参加中の各チャンネルへ QUIT を1回ずつ通知し，全チャンネルから除去する（本人は除外）。

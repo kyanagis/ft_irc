@@ -12,6 +12,7 @@ public:
 	static std::string              trim(const std::string& s);
 	static std::vector<std::string> split(const std::string& s, char delim);
 	static std::string              toString(long value);
+	static std::string              capLine(const std::string& line);
 
 private:
 	StringUtil();
