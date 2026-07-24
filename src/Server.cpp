@@ -7,6 +7,7 @@
 #include <cstring>
 #include <ctime>
 
+#include <new>
 #include <stdexcept>
 
 #include <sys/socket.h>
@@ -232,67 +233,89 @@ void Server::run() {
 	std::signal(SIGPIPE, SIG_IGN);
 
 	while (_running) {
-		rebuildPollFds();
+		// メモリ枯渇(bad_alloc)でプロセスを落とさない（subject: OOMでも予期せぬ終了は不可）。
+		// 1周分の割当(pollfd構築/accept/per-client/sweep)をまとめて守り，枯渇した周は捨てて
+		// 次周で再試行する。poll失敗のruntime_errorはbad_allocでないのでここは素通りし，
+		// 意図通り致命になる。per-client処理は内側tryで個別にdropして周内の他fdへ影響させない。
+		try {
+			rebuildPollFds();
 
-		nfds_t nfds = static_cast<nfds_t>(_pollfds.size());
-		int ready = poll(&_pollfds[0], nfds, POLL_TIMEOUT_MS);
-		if (ready < 0) {
-			if (errno == EINTR) {
-				continue;
+			nfds_t nfds = static_cast<nfds_t>(_pollfds.size());
+			int ready = poll(&_pollfds[0], nfds, POLL_TIMEOUT_MS);
+			if (ready < 0) {
+				if (errno == EINTR) {
+					continue;
+				}
+				throw std::runtime_error(
+						std::string("poll: ") + std::strerror(errno));
 			}
-			throw std::runtime_error(
-					std::string("poll: ") + std::strerror(errno));
+
+			for (std::size_t i = 0; i < _pollfds.size(); ++i) {
+				short re = _pollfds[i].revents;
+				if (re == 0) {
+					continue;
+				}
+
+				int fd = _pollfds[i].fd;
+
+				if (fd == _listen.fd()) {
+					if (re & POLLIN) {
+						acceptClient();
+					}
+					continue;
+				}
+
+				std::map<int, Client*>::iterator it = _clients.find(fd);
+				if (it == _clients.end()) {
+					continue;
+				}
+				Client* client = it->second;
+
+				// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete): disconnect 後は find(fd)==end() で
+				// 必ず continue するため UAF にならない（解析器の誤検知）
+				try {
+					if (re & POLLIN) {
+						handleReadable(*client);
+						if (_clients.find(fd) == _clients.end()) {
+							continue;
+						}
+					}
+					if (re & POLLOUT) {
+						handleWritable(*client);
+						if (_clients.find(fd) == _clients.end()) {
+							continue;
+						}
+						if (client->isReadClosed()
+								&& !client->hasPendingOutput()) {
+							disconnect(*client, "client closed connection");
+							continue;
+						}
+					}
+					if (re & (POLLERR | POLLHUP | POLLNVAL)) {
+						if (!(client->isReadClosed()
+								&& client->hasPendingOutput())) {
+							disconnect(*client, "poll error/hangup");
+						}
+					}
+				}
+				catch (const std::bad_alloc&) {
+					// このクライアント処理中にメモリ枯渇。該当clientをdropしてバッファを
+					// 解放し継続する（disconnectはannounceQuitのbroadcastでbad_allocを
+					// 再throwし得るので使わず，nothrowなdropQuietlyで落とす）。
+					// disconnect途中でthrowしていてもfindで残存を確認してから処理する。
+					std::map<int, Client*>::iterator jt = _clients.find(fd);
+					if (jt != _clients.end()) {
+						dropQuietly(*jt->second);
+					}
+				}
+				// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
+			}
+
+			sweepClients();
 		}
-
-		for (std::size_t i = 0; i < _pollfds.size(); ++i) {
-			short re = _pollfds[i].revents;
-			if (re == 0) {
-				continue;
-			}
-
-			int fd = _pollfds[i].fd;
-
-			if (fd == _listen.fd()) {
-				if (re & POLLIN) {
-					acceptClient();
-				}
-				continue;
-			}
-
-			std::map<int, Client*>::iterator it = _clients.find(fd);
-			if (it == _clients.end()) {
-				continue;
-			}
-			Client* client = it->second;
-
-			// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete): disconnect 後は find(fd)==end() で
-			// 必ず continue するため UAF にならない（解析器の誤検知）
-
-			if (re & POLLIN) {
-				handleReadable(*client);
-				if (_clients.find(fd) == _clients.end()) {
-					continue;
-				}
-			}
-			if (re & POLLOUT) {
-				handleWritable(*client);
-				if (_clients.find(fd) == _clients.end()) {
-					continue;
-				}
-				if (client->isReadClosed() && !client->hasPendingOutput()) {
-					disconnect(*client, "client closed connection");
-					continue;
-				}
-			}
-			if (re & (POLLERR | POLLHUP | POLLNVAL)) {
-				if (!(client->isReadClosed() && client->hasPendingOutput())) {
-					disconnect(*client, "poll error/hangup");
-				}
-			}
-			// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
+		catch (const std::bad_alloc&) {
+			continue;  // pollfd構築/accept/sweep等の割当枯渇: この周は捨て次周で再試行
 		}
-
-		sweepClients();
 	}
 }
 
@@ -301,18 +324,19 @@ void Server::acceptClient() {
 	int accepted = 0;
 	while (accepted < MAX_ACCEPT) {
 		int fd = _listen.acceptClient(host);
-		if (fd < 0 ) {
+		if (fd < 0) {
 			break;
 		}
 		Client* client = 0;
 		try {
 			client = new Client(fd, host);
+			_clients[fd] = client;  // map挿入もtry内: bad_allocでもfd/clientを漏らさない
 		}
 		catch (...) {
 			close(fd);
+			delete client;  // new成功後にinsertが投げた時のみ非0。new失敗時は0でdelete安全
 			continue;
 		}
-		_clients[fd] = client;
 		accepted++;
 	}
 }
@@ -454,6 +478,25 @@ void Server::finalize(Client& client) {
 	_clients.erase(fd);
 	close(fd);
 	delete &client;
+}
+
+// メモリ枯渇時などの緊急切断用。QUIT通知(broadcastは再割当でbad_allocを再throwし得る)を
+// 出さず，全チャンネルから除去してからfinalizeする。removeMember/erase/close/deleteは
+// いずれも割当を伴わないので本関数はnothrow。単なるfinalizeだけだとChannelに生ポインタが
+// 残りUAFになるため，チャンネル除去を必ず先に行う。
+void Server::dropQuietly(Client& client) {
+	std::map<std::string, Channel*>::iterator it = _channels.begin();
+	while (it != _channels.end()) {
+		Channel* channel = it->second;
+		channel->removeMember(client);
+		if (channel->isEmpty()) {
+			delete channel;
+			_channels.erase(it++);
+		} else {
+			++it;
+		}
+	}
+	finalize(client);
 }
 
 // 即時切断。ソケットが死んでいる/送信バッファ満杯でERRORを送れない経路用（ERRORは付けない）。
