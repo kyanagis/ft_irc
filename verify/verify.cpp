@@ -8,7 +8,8 @@
 //   [Message パーサ]  ../src/Message.cpp
 //     - 実装 ≡ 実行可能仕様(spec_parser.hpp) を縮約アルファベット長さ<=12 全数で証明
 //     - 任意バイト列(0x00-0xFF, CR/LF含む)での差分＋健全性不変条件
-//     - ラウンドトリップ parse(serialize(m)) == normalize(m)
+//     - RFC整形式メッセージのラウンドトリップ
+//     - command文法、区切り、最大15 paramsの境界ベクタ
 //     - 文字クラス抽象化補題（置換σとの可換性）← 全長への一般化の根拠
 //     - 範囲外 param(i) が常に空（メモリ安全）
 //   [Reply 整形]  ../src/Reply.cpp
@@ -27,9 +28,8 @@
 //   [横断] 上記すべてを ASan+UBSan 下で実行 → メモリ安全・未定義動作なしの証拠
 //
 // 有界全数の“証明”について（正直な注記）:
-//   長さ<=12 の全列挙は、その有限領域では実装≡仕様の演繹的証明。全長への一般化は
-//   「パーサが先頭からの1パス走査で長さ依存の状態を持たない（13文字目以降に新しい
-//   制御パスが現れない）」ことと置換補題(T2)による帰納的確信であり、演繹証明ではない。
+//   長さ<=12 の全列挙は、その有限領域での実装≡仕様の証明に限られる。
+//   15 paramsなど長さ依存の境界は専用ベクタ、長い入力はproperty/fuzzで別途検証する。
 //
 // 使い方:
 //   ./verify all [maxLen]   … 全項目（T1は長さ<=maxLen 全数、既定12）
@@ -37,6 +37,7 @@
 //   ./verify garbage ITERS  … ランダム任意バイト列で差分＋不変条件
 //   ./verify roundtrip ITERS… parse(serialize(m)) == normalize(m)
 //   ./verify subst ITERS    … 文字クラス抽象化補題（σとの可換性）
+//   ./verify parser         … MessageのRFC境界ベクタ
 //   ./verify reply          … Reply全数＋ゴールデンベクタ
 //   ./verify units          … StringUtil / Client / Channel / IrcException
 //
@@ -160,8 +161,18 @@ static void checkInvariants(const std::string& line) {
 		if (c == ' ') { fail("INV command has space", line); break; }
 		if (c >= 'a' && c <= 'z') { fail("INV command not uppercased", line); break; }
 	}
+	if (!m.empty()) {
+		bool letters = true;
+		bool digits = cmd.size() == 3;
+		for (std::string::size_type i = 0; i < cmd.size(); ++i) {
+			if (cmd[i] < 'A' || cmd[i] > 'Z') letters = false;
+			if (cmd[i] < '0' || cmd[i] > '9') digits = false;
+		}
+		if (!letters && !digits) fail("INV command grammar", line);
+	}
 	const std::string& pre = m.prefix();
 	if (pre.find(' ') != std::string::npos) fail("INV prefix has space", line);
+	if (m.size() > 15) fail("INV too many params", line);
 
 	for (std::size_t i = 0; i + 1 < m.size(); ++i) {  // 最後以外のパラメータ
 		const std::string& p = m.param(i);
@@ -169,13 +180,14 @@ static void checkInvariants(const std::string& line) {
 		if (p[0] == ':') { fail("INV middle param starts ':'", line); break; }
 		if (p.find(' ') != std::string::npos) { fail("INV middle param has space", line); break; }
 	}
-	if (m.empty() && m.size() != 0) fail("INV empty msg has params", line);
+	if (m.empty() && (!m.prefix().empty() || m.size() != 0)) {
+		fail("INV invalid msg retains fields", line);
+	}
 }
 
-// - T1本体: 縮約アルファベット{' ',':','a','B'}上の全文字列(長さ<=maxLen)を列挙して差分検査
-//   ・パーサが区別するのは ' ' / ':' / その他 のみ（T2で正当化）→「その他」代表2文字で足りる
+// - T1本体: 区切り、英字command、数値commandを含む縮約アルファベットの全列挙
 static void runExhaustive(int maxLen) {
-	static const char ALPHA[] = { ' ', ':', 'a', 'B' };
+	static const char ALPHA[] = { ' ', ':', 'a', '1' };
 	const int K = 4;
 
 	unsigned long total = 0;
@@ -199,7 +211,7 @@ static void runExhaustive(int maxLen) {
 		}
 		std::printf("  exhaustive len=%2d done (cumulative %lu strings)\n", len, total);
 	}
-	std::printf("T1: exhaustive impl==spec, %lu strings, alphabet {' ',':','a','B'}, len<=%d\n",
+	std::printf("T1: exhaustive impl==spec, %lu strings, alphabet {' ',':','a','1'}, len<=%d\n",
 			total, maxLen);
 }
 
@@ -239,10 +251,15 @@ static std::string randToken(Rng& rng, unsigned long maxLen, bool noLeadingColon
 	return t;
 }
 
-// - トークン間に1〜3個のスペースを挿入（連続スペース耐性も同時に検査）
-static void appendSpaces(std::string& out, Rng& rng) {
-	unsigned long n = 1 + rng.below(3);
-	for (unsigned long i = 0; i < n; ++i) out += ' ';
+static std::string randCommand(Rng& rng, unsigned long maxLen) {
+	unsigned long len = 1 + rng.below(maxLen);
+	std::string command;
+	for (unsigned long i = 0; i < len; ++i) {
+		unsigned long letter = rng.below(52);
+		command += static_cast<char>(
+				letter < 26 ? 'A' + letter : 'a' + letter - 26);
+	}
+	return command;
 }
 
 // - T3本体: 整形式メッセージを直列化→parseで完全復元されることを検査
@@ -251,10 +268,10 @@ static void runRoundtrip(unsigned long iters) {
 	for (unsigned long it = 0; it < iters; ++it) {
 		bool hasPrefix = rng.below(2) == 0;
 		std::string prefix = hasPrefix ? randToken(rng, 10, false) : "";
-		std::string cmd = randToken(rng, 8, true);
+		std::string cmd = randCommand(rng, 8);
 
 		std::vector<std::string> params;
-		unsigned long nMiddle = rng.below(4);
+		unsigned long nMiddle = rng.below(15);
 		for (unsigned long i = 0; i < nMiddle; ++i) {
 			params.push_back(randToken(rng, 8, true));
 		}
@@ -271,14 +288,14 @@ static void runRoundtrip(unsigned long iters) {
 		}
 
 		std::string line;
-		if (hasPrefix) { line += ':'; line += prefix; appendSpaces(line, rng); }
+		if (hasPrefix) { line += ':'; line += prefix; line += ' '; }
 		line += cmd;
 		for (std::size_t i = 0; i < params.size(); ++i) {
-			appendSpaces(line, rng);
+			line += ' ';
 			line += params[i];
 		}
 		if (hasTrailing) {
-			appendSpaces(line, rng);
+			line += ' ';
 			bool colonOptional = !trailing.empty()
 					&& trailing.find(' ') == std::string::npos
 					&& trailing[0] != ':';
@@ -300,6 +317,78 @@ static void runRoundtrip(unsigned long iters) {
 		if (!ok) fail("T3 roundtrip", line);
 	}
 	std::printf("T3: %lu roundtrip cases, parse(serialize(m)) == normalize(m)\n", iters);
+}
+
+// - RFC 2812 §2.3.1で長さ依存になるcommand/params境界を明示的に検証する
+static void runParserBoundaries() {
+	static const char* valid[] = {
+		"PING",
+		"001",
+		":server PING token",
+		"PRIVMSG #room :hello world",
+		"CMD :"
+	};
+	for (std::size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); ++i) {
+		checkAgainstSpec(valid[i]);
+		expect("valid RFC message accepted", !Message::parse(valid[i]).empty());
+	}
+
+	static const char* invalid[] = {
+		" PING",
+		"PING  token",
+		": PING",
+		":server  PING",
+		":server",
+		"A1",
+		"12",
+		"1234",
+		"_",
+		"{",
+		"/12",
+		"PING ",
+		"PING\r",
+		"PING\n",
+		"PI\0NG"
+	};
+	for (std::size_t i = 0; i + 1 < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+		checkAgainstSpec(invalid[i]);
+		expect("invalid RFC message rejected", Message::parse(invalid[i]).empty());
+	}
+	std::string withNul(invalid[sizeof(invalid) / sizeof(invalid[0]) - 1], 5);
+	checkAgainstSpec(withNul);
+	expect("NUL message rejected", Message::parse(withNul).empty());
+
+	std::string fourteen = "CMD";
+	for (int i = 0; i < 14; ++i) {
+		fourteen += " p";
+	}
+	checkAgainstSpec(fourteen);
+	expect("fourteen middle params accepted",
+			Message::parse(fourteen).size() == 14);
+
+	std::string fifteen = fourteen + " final trailing value";
+	checkAgainstSpec(fifteen);
+	Message parsed = Message::parse(fifteen);
+	expect("fifteen params accepted", parsed.size() == 15);
+	checkEq(parsed.param(14), "final trailing value",
+			"fifteenth param is trailing");
+
+	std::string fifteenColon = fourteen + " :final trailing value";
+	checkAgainstSpec(fifteenColon);
+	expect("colon-prefixed fifteenth param accepted",
+			Message::parse(fifteenColon).size() == 15);
+
+	std::string badSeparator = fourteen + "  invalid";
+	checkAgainstSpec(badSeparator);
+	expect("double separator at param boundary rejected",
+			Message::parse(badSeparator).empty());
+
+	std::string missingFifteenth = fourteen + " ";
+	checkAgainstSpec(missingFifteenth);
+	expect("missing fifteenth param rejected",
+			Message::parse(missingFifteenth).empty());
+
+	std::printf("parser: RFC command/separator/15-param boundaries ok\n");
 }
 
 // ------------- T2: 文字クラス抽象化補題（case整合な特殊文字固定置換との可換性）
@@ -490,22 +579,41 @@ static void feedAndExpectLines(const char* raw,
 	expect("extractLine drained", !c.extractLine(line));
 }
 
-// - CR-LF/LF/空行/複数行/埋め込みCR/部分受信 と 登録状態機械・prefix・バッファ・overflow
+// - CRLF/空行/複数行/不正終端/部分受信 と 登録状態機械・prefix・buffer/overflow
 static void runClient() {
 	// 行再構築の各パターン
 	{
 		const char* e1[] = { "ABC" };
 		feedAndExpectLines("ABC\r\n", e1, 1);
-		const char* e2[] = { "ABC" };
-		feedAndExpectLines("ABC\n", e2, 1);            // LF単独も許容
 		const char* e3[] = { "A", "B" };
-		feedAndExpectLines("A\r\nB\n", e3, 2);          // 複数行
+		feedAndExpectLines("A\r\nB\r\n", e3, 2);       // 複数行
 		const char* e4[] = { "" };
 		feedAndExpectLines("\r\n", e4, 1);              // 空行
-		const char* e5[] = { "XY" };
-		feedAndExpectLines("X\rY\n", e5, 1);            // 埋め込みCRも除去（§2.3.1）
-		const char* e6[] = { "" };
-		feedAndExpectLines("\n", e6, 1);                // bare LF 空行（!line.empty() の False 分岐）
+	}
+	// RFC 2812の終端は必ずCRLF。bare LFは内容にかかわらず拒否する。
+	{
+		Client c(-1, "h");
+		std::string line;
+		c.appendInput("ABC\n", 4);
+		expect("bare LF line completes", c.extractLine(line));
+		expect("bare LF rejected", c.inputProtocolError());
+		expect("bare LF clears output", line.empty());
+	}
+	{
+		Client c(-1, "h");
+		std::string line;
+		c.appendInput("\n", 1);
+		expect("empty bare LF completes", c.extractLine(line));
+		expect("empty bare LF rejected", c.inputProtocolError());
+	}
+	// 埋め込みCRは内容を書き換えず、プロトコルエラーとして扱う。
+	{
+		Client c(-1, "h");
+		std::string line;
+		c.appendInput("X\rY\r\n", 5);
+		expect("embedded CR line completes", c.extractLine(line));
+		expect("embedded CR rejected", c.inputProtocolError());
+		expect("embedded CR clears output", line.empty());
 	}
 	// 部分受信：改行が来るまで false、来たら1行に再構築（N14）
 	{
@@ -517,14 +625,36 @@ static void runClient() {
 		expect("partial: line completes", c.extractLine(line));
 		checkEq(line, "ABC", "partial reassembled");
 	}
-	// NUL/CR 除去（RFC2812 §2.3.1）。通常文字/NUL/CR の3種で mcdc 網羅
+	// NULはRFC2812 §2.3.1違反として拒否する。
 	{
 		Client c(-1, "h");
 		std::string line;
 		const char raw[] = "A\0BC\r\n";        // A NUL B C CR LF
 		c.appendInput(raw, sizeof(raw) - 1);   // 6 bytes（末尾の実NUL終端は除く）
-		expect("nul/cr line completes", c.extractLine(line));
-		checkEq(line, "ABC", "nul and cr stripped");
+		expect("nul line completes", c.extractLine(line));
+		expect("nul rejected", c.inputProtocolError());
+		expect("nul clears output", line.empty());
+	}
+	// RFC上限はCRLF込み512 octets。510-byte本体は可、511-byte本体は拒否。
+	{
+		Client c(-1, "h");
+		std::string line;
+		std::string boundary(510, 'A');
+		boundary += "\r\n";
+		c.appendInput(boundary.data(), boundary.size());
+		expect("512-octet line completes", c.extractLine(line));
+		expect("512-octet line accepted", !c.inputProtocolError());
+		expect("512-octet payload preserved", line.size() == 510);
+	}
+	{
+		Client c(-1, "h");
+		std::string line;
+		std::string overlong(511, 'A');
+		overlong += "\r\n";
+		c.appendInput(overlong.data(), overlong.size());
+		expect("513-octet line completes", c.extractLine(line));
+		expect("513-octet line rejected", c.inputProtocolError());
+		expect("513-octet line clears output", line.empty());
 	}
 	// 登録ステートマシン
 	{
@@ -581,13 +711,24 @@ static void runClient() {
 		std::string big(600, 'A');              // 512超・改行なし
 		e.appendInput(big.data(), big.size());
 		expect("input overflow", e.inputOverflow());
-		e.appendInput("\n", 1);                 // 改行が来れば overflow ではない
+		e.appendInput("\r\n", 2);               // 改行が来ればextractLine側で長さ判定
 		expect("no overflow with newline", !e.inputOverflow());
 
 		Client f(6, "h");                       // outputOverflow 網羅（<=1MiB と >1MiB）
 		expect("no out overflow when small", !f.outputOverflow());
 		f.appendOutput(std::string(1024 * 1024 + 1, 'x'));
 		expect("out overflow when huge", f.outputOverflow());
+		expect("overflowing write is not queued", f.outBuffer().empty());
+		f.appendOutput("ignored");
+		expect("writes after overflow stay ignored", f.outBuffer().empty());
+
+		Client g(7, "h");
+		g.appendOutput(std::string(1024 * 1024, 'x'));
+		expect("queue exactly at limit accepted",
+				!g.outputOverflow()
+				&& g.outBuffer().size() == 1024UL * 1024);
+		g.appendOutput("x");
+		expect("one byte past full queue rejected", g.outputOverflow());
 	}
 	std::printf("units: Client ok\n");
 }
@@ -729,6 +870,8 @@ int main(int argc, char** argv) {
 		runRoundtrip(arg > 0 ? static_cast<unsigned long>(arg) : 1000000UL);
 	} else if (mode == "subst") {
 		runSubstitution(arg > 0 ? static_cast<unsigned long>(arg) : 500000UL);
+	} else if (mode == "parser") {
+		runParserBoundaries();
 	} else if (mode == "reply") {
 		runReply();
 	} else if (mode == "units") {
@@ -738,11 +881,12 @@ int main(int argc, char** argv) {
 		runGarbage(2000000UL);
 		runRoundtrip(1000000UL);
 		runSubstitution(500000UL);
+		runParserBoundaries();
 		runReply();
 		runUnits();
 	} else {
 		std::fprintf(stderr,
-				"usage: %s [all|exhaustive|garbage|roundtrip|subst|reply|units] [N]\n",
+				"usage: %s [all|exhaustive|garbage|roundtrip|subst|parser|reply|units] [N]\n",
 				argv[0]);
 		return 2;
 	}
