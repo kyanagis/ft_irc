@@ -246,6 +246,38 @@ def test_bad_pass(port):
     s.close()
 
 
+def test_bad_username(port):
+    # username に '@' があると prefix の user/host 境界が壊れる。461 で拒否し、
+    # 登録もさせない（001 が来ない）こと。正しい username で再送すれば通ること。
+    s = socket.create_connection((HOST, port), timeout=2)
+    nick = unique_nick()
+    s.sendall(b"PASS " + PASSWORD.encode() + b"\r\nNICK " + nick
+              + b"\r\nUSER bad@user 0 * :x\r\n")
+    r = recv_until(s, b"461", timeout=1.5)
+    check("USER with '@' in username -> 461", b"461" in r, repr(r))
+    check("USER with '@' in username does not register", b"001" not in r, repr(r))
+
+    # 同じ接続で正しい username を送れば登録できる（拒否は接続を殺さない）。
+    s.sendall(b"USER good 0 * :x\r\n")
+    r2 = recv_until(s, b"001", timeout=1.5)
+    check("valid USER after rejection registers", b"001" in r2, repr(r2))
+    s.close()
+
+
+def test_prefix_has_single_at(port):
+    # 配信される prefix が nick!user@host の形で '@' を1個だけ持つこと（#63 回帰）。
+    a, an, _ = register(port)
+    b, bn, _ = register(port)
+    a.sendall(b"PRIVMSG " + bn + b" :hi-prefix\r\n")
+    r = recv_until(b, b"hi-prefix")
+    line = r.split(b"\r\n")[0]
+    prefix = line[1:].split(b" ")[0] if line.startswith(b":") else b""
+    check("delivered prefix is nick!user@host with a single '@'",
+          prefix.count(b"@") == 1 and prefix.startswith(an + b"!"), repr(line))
+    a.close()
+    b.close()
+
+
 def test_not_enough_params(port):
     # PART は実装済み。引数不足で 461 が返ることを確認（461 経路の回帰ガード）。
     s, _, _ = register(port)
@@ -414,6 +446,8 @@ def main():
             test_nick_in_use(port)
             test_rfc_case_mapping(port)
             test_bad_pass(port)
+            test_bad_username(port)
+            test_prefix_has_single_at(port)
             test_not_enough_params(port)
         else:
             print("  skip  registration flow "
