@@ -7,6 +7,7 @@
 #include <ctime>
 
 #include <new>
+#include <set>
 #include <stdexcept>
 
 #include <sys/socket.h>
@@ -518,16 +519,23 @@ void Server::completeRegistration(Client& client) {
 			name + " " + SERVER_VERSION + " - itkol"));
 }
 
-// 参加中の各チャンネルへ QUIT を1回ずつ通知し，全チャンネルから除去する（本人は除外）。
+// 共有チャンネルを持つ各クライアントへ QUIT を1回だけ通知し，全チャンネルから除去する（本人は除外）。
 void Server::announceQuit(Client& client, const std::string& reason) {
-	const std::string quitLine = Reply::from(client.prefix(), "QUIT :" + reason);
+	const std::string quitLine =
+			Reply::from(client.prefix(), "QUIT :" + reason);
 
-	// 参加中だけでなくinvitedのみのチャンネルにも生ポインタが残るので全走査
+	std::set<Client*> recipients;
+
+	// 参加中だけでなく invited のみのチャンネルにも生ポインタが残るため全チャンネルを走査し removeMember する
 	std::map<std::string, Channel*>::iterator it = _channels.begin();
 	while (it != _channels.end()) {
 		Channel* channel = it->second;
-		if (channel->hasMember(client))
-			channel->broadcast(quitLine, &client);
+		// removeMember 前に収集する。removeMember 後は hasMember(client) が必ず偽になり，
+		// そのチャンネルを配送対象と判定できなくなるため（単独メンバーなら空削除もされる）。
+		if (channel->hasMember(client)) {
+			const std::set<Client*>& mem = channel->members();
+			recipients.insert(mem.begin(), mem.end());
+		}
 		channel->removeMember(client);
 		if (channel->isEmpty()) {
 			delete channel;
@@ -535,6 +543,15 @@ void Server::announceQuit(Client& client, const std::string& reason) {
 		} else {
 			++it;
 		}
+	}
+
+	// 本人は QUIT を受け取らない（本人へは別途 ERROR を送る）。集合構築後に1回除外。
+	recipients.erase(&client);
+
+	// 共有チャンネルを持つ各相手へちょうど1回。sendLine は broadcast と同一バイト列を積む。
+	for (std::set<Client*>::iterator r = recipients.begin();
+			r != recipients.end(); ++r) {
+		sendLine(**r, quitLine);
 	}
 }
 
