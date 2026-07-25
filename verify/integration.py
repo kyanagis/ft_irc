@@ -4,6 +4,7 @@
 # 検査内容:
 #   - N14 : 部分送信（1コマンドを複数パケットに分割）を1行に再構築して1応答を返す
 #   - N8  : 未知/不正コマンド連打・長すぎる行でもサーバが落ちない
+#   - RFC : CRLF終端、先頭空白拒否、RFC 2812 casemapping
 #   - 登録フロー(001 RPL_WELCOME) と登録系エラー(433/464/461)  ※IRC_TEST_REGISTRATION=1
 #   - 全コマンドの E2E（PRIVMSG/NOTICE/TOPIC/MODE/KICK/INVITE/PING/QUIT）
 #
@@ -179,6 +180,30 @@ def test_no_crash(port):
     )
 
 
+def test_rfc_framing(port):
+    # RFC 2812 §2.3: bare LFはメッセージ終端ではなくprotocol error。
+    s = socket.create_connection((HOST, port), timeout=2)
+    s.sendall(b"FOO\n")
+    s.settimeout(2)
+    try:
+        closed = s.recv(4096) == b""
+    except OSError:
+        closed = True
+    s.close()
+    check("RFC framing rejects bare LF", closed)
+
+    # 行頭空白を持つ不正メッセージは実行せず、次の整形式行は通常処理する。
+    s = socket.create_connection((HOST, port), timeout=2)
+    s.sendall(b"   FOO\r\nBAR\r\n")
+    resp = recv_until(s, b"BAR", timeout=2)
+    s.close()
+    check(
+        "RFC parser ignores leading-space command",
+        b"421" in resp and b"BAR" in resp and b"FOO" not in resp,
+        repr(resp),
+    )
+
+
 # ----------------------------------------------- 登録フロー（実装済み・回帰ガード）
 
 def test_registration(port):
@@ -195,6 +220,20 @@ def test_nick_in_use(port):
     s.sendall(b"PASS " + PASSWORD.encode() + b"\r\nNICK " + an + b"\r\n")
     r = recv_until(s, b"433", timeout=1.5)
     check("duplicate NICK -> 433", b"433" in r, repr(r))
+    s.close()
+    a.close()
+
+
+def test_rfc_case_mapping(port):
+    # RFC 2812 §2.2では '[' と '{'（同様に ]/}, \\/|, ~/^）を同一視する。
+    a, _, _ = register(port, nick=b"Map[")
+    s = socket.create_connection((HOST, port), timeout=2)
+    s.sendall(
+        b"PASS " + PASSWORD.encode()
+        + b"\r\nNICK Map{\r\nUSER map 0 * :Map\r\n"
+    )
+    r = recv_until(s, b"433", timeout=1.5)
+    check("RFC casemapping rejects equivalent nickname", b"433" in r, repr(r))
     s.close()
     a.close()
 
@@ -368,10 +407,12 @@ def main():
     try:
         test_partial_send(port)
         test_no_crash(port)
+        test_rfc_framing(port)
 
         if os.environ.get("IRC_TEST_REGISTRATION") == "1":
             test_registration(port)
             test_nick_in_use(port)
+            test_rfc_case_mapping(port)
             test_bad_pass(port)
             test_not_enough_params(port)
         else:

@@ -1,14 +1,9 @@
 #ifndef SPEC_PARSER_HPP
 #define SPEC_PARSER_HPP
 
-// 実行可能仕様（executable specification）
-//
-// SPEC.md の文法をそのまま有限状態機械として転写したもの。
-// src/Message.cpp（インデックス走査＋substr方式）とは意図的に
-// 異なる構造（1文字ずつのFSM）で書き、両者の全数一致をもって
-// 実装が仕様を満たす証拠とする（N-version差分検査）。
+// RFC 2812 §2.3.1 の message ABNFを、1文字ずつ走査する独立仕様として
+// 実装する。src/Message.cppとは制御構造を分け、差分検査に使用する。
 
-#include <cctype>
 #include <string>
 #include <vector>
 
@@ -19,84 +14,120 @@ struct SpecMessage {
 	bool                     isEmpty;
 };
 
-inline SpecMessage specParse(const std::string& line) {
-	enum State {
-		S_LEAD,      // 行頭の空白
-		S_PREFIX,    // ':' に続く prefix 本体
-		S_CMDSEP,    // prefix とコマンドの間の空白
-		S_CMD,       // コマンド本体
-		S_SEP,       // パラメータ間の空白
-		S_MIDDLE,    // 通常パラメータ本体
-		S_TRAILING   // ':' 以降の trailing（行末まで丸ごと）
-	};
-
+inline SpecMessage emptySpecMessage() {
 	SpecMessage m;
 	m.isEmpty = true;
+	return m;
+}
 
-	State st = S_LEAD;
-	std::string cur;
+inline bool specLetter(char c) {
+	return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
 
+inline bool specDigit(char c) {
+	return c >= '0' && c <= '9';
+}
+
+inline bool specCommandValid(const std::string& command) {
+	if (command.empty()) {
+		return false;
+	}
+	bool letters = true;
+	for (std::string::size_type i = 0; i < command.size(); ++i) {
+		if (!specLetter(command[i])) {
+			letters = false;
+		}
+	}
+	if (letters) {
+		return true;
+	}
+	return command.size() == 3
+			&& specDigit(command[0])
+			&& specDigit(command[1])
+			&& specDigit(command[2]);
+}
+
+inline SpecMessage specParse(const std::string& line) {
+	SpecMessage m = emptySpecMessage();
+	if (line.empty() || line[0] == ' ') {
+		return m;
+	}
 	for (std::string::size_type i = 0; i < line.size(); ++i) {
-		char c = line[i];
-		switch (st) {
-		case S_LEAD:
-			if (c == ' ') break;
-			if (c == ':') { st = S_PREFIX; break; }
-			cur += c;
-			st = S_CMD;
-			break;
-		case S_PREFIX:
-			if (c == ' ') { m.prefix = cur; cur.clear(); st = S_CMDSEP; break; }
-			cur += c;
-			break;
-		case S_CMDSEP:
-			if (c == ' ') break;
-			cur += c;
-			st = S_CMD;
-			break;
-		case S_CMD:
-			if (c == ' ') { m.command = cur; cur.clear(); st = S_SEP; break; }
-			cur += c;
-			break;
-		case S_SEP:
-			if (c == ' ') break;
-			if (c == ':') { st = S_TRAILING; break; }
-			cur += c;
-			st = S_MIDDLE;
-			break;
-		case S_MIDDLE:
-			if (c == ' ') { m.params.push_back(cur); cur.clear(); st = S_SEP; break; }
-			cur += c;
-			break;
-		case S_TRAILING:
-			cur += c;
-			break;
+		if (line[i] == '\0' || line[i] == '\r' || line[i] == '\n') {
+			return emptySpecMessage();
 		}
 	}
 
-	switch (st) {
-	case S_LEAD:
-	case S_CMDSEP:
-	case S_SEP:
-		break;
-	case S_PREFIX:
-		m.prefix = cur;  // prefixのみの行：コマンド無し＝空メッセージ
-		break;
-	case S_CMD:
-		m.command = cur;
-		break;
-	case S_MIDDLE:
-	case S_TRAILING:
-		m.params.push_back(cur);  // 空のtrailing（"CMD :"）も1パラメータ
-		break;
+	std::string::size_type pos = 0;
+	if (line[pos] == ':') {
+		++pos;
+		while (pos < line.size() && line[pos] != ' ') {
+			m.prefix += line[pos++];
+		}
+		if (m.prefix.empty() || pos >= line.size()) {
+			return emptySpecMessage();
+		}
+		++pos;
+		if (pos >= line.size() || line[pos] == ' ') {
+			return emptySpecMessage();
+		}
 	}
 
-	for (std::string::size_type i = 0; i < m.command.size(); ++i) {
-		m.command[i] = static_cast<char>(
-				std::toupper(static_cast<unsigned char>(m.command[i])));
+	std::string command;
+	while (pos < line.size() && line[pos] != ' ') {
+		command += line[pos++];
 	}
-	m.isEmpty = m.command.empty();
-	return m;
+	if (!specCommandValid(command)) {
+		return emptySpecMessage();
+	}
+	for (std::string::size_type i = 0; i < command.size(); ++i) {
+		if (command[i] >= 'a' && command[i] <= 'z') {
+			command[i] = static_cast<char>(command[i] - 'a' + 'A');
+		}
+	}
+	m.command = command;
+	m.isEmpty = false;
+	if (pos == line.size()) {
+		return m;
+	}
+
+	++pos;
+	if (pos >= line.size() || line[pos] == ' ') {
+		return emptySpecMessage();
+	}
+
+	while (true) {
+		if (line[pos] == ':') {
+			m.params.push_back(line.substr(pos + 1));
+			return m;
+		}
+
+		std::string middle;
+		while (pos < line.size() && line[pos] != ' ') {
+			middle += line[pos++];
+		}
+		m.params.push_back(middle);
+		if (pos == line.size()) {
+			return m;
+		}
+
+		if (m.params.size() == 14) {
+			++pos;
+			if (pos >= line.size() || line[pos] == ' ') {
+				return emptySpecMessage();
+			}
+			if (line[pos] == ':') {
+				++pos;
+			}
+			m.params.push_back(line.substr(pos));
+			return m;
+		}
+
+		++pos;
+		if (pos >= line.size() || line[pos] == ' ') {
+			return emptySpecMessage();
+		}
+	}
 }
 
 #endif
