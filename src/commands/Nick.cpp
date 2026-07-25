@@ -6,6 +6,7 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
@@ -98,6 +99,7 @@ void NickCommand::execute(Server& server, Client& client, const Message& msg) {
 	if (client.isRegistered()) {
 		// 通知は旧prefixを使うので setNick より前に流す。
 		notifyNickChange(server, client, nick);
+		Log::auth("* " + client.nick() + " is now known as " + nick);
 		client.setNick(nick);
 	} else {
 		client.setNick(nick);

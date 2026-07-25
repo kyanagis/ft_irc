@@ -7,6 +7,7 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
@@ -17,6 +18,12 @@ namespace {
 			const std::string& detail) {
 		server.sendLine(client, Reply::numeric(server.serverName(), code,
 				client.nick(), detail));
+	}
+
+	// "3 members" のような人数表記
+	std::string memberCountText(const Channel& channel) {
+		return StringUtil::toString(static_cast<long>(channel.memberCount()))
+				+ (channel.memberCount() == 1 ? " member" : " members");
 	}
 
 	bool isValidChannelName(const std::string& name) {
@@ -38,16 +45,24 @@ namespace {
 		if (channel.hasKey() && key != channel.key()) {
 			sendNumeric(server, client, Reply::ERR_BADCHANNELKEY,
 					channel.name() + " :Cannot join channel (+k)");
+			Log::deny(client.nick() + " JOIN " + channel.name()
+					+ " -> 475 wrong key (+k)");
 			return false;
 		}
 		if (channel.inviteOnly() && !channel.isInvited(client)) {
 			sendNumeric(server, client, Reply::ERR_INVITEONLYCHAN,
 					channel.name() + " :Cannot join channel (+i)");
+			Log::deny(client.nick() + " JOIN " + channel.name()
+					+ " -> 473 not invited (+i)");
 			return false;
 		}
 		if (channel.hasLimit() && channel.memberCount() >= channel.limit()) {
 			sendNumeric(server, client, Reply::ERR_CHANNELISFULL,
 					channel.name() + " :Cannot join channel (+l)");
+			Log::deny(client.nick() + " JOIN " + channel.name()
+					+ " -> 471 full (+l "
+					+ StringUtil::toString(static_cast<long>(channel.limit()))
+					+ ")");
 			return false;
 		}
 		return true;
@@ -109,14 +124,18 @@ namespace {
 		if (!isValidChannelName(name)) {
 			sendNumeric(server, client, Reply::ERR_NOSUCHCHANNEL,
 					name + " :No such channel");
+			Log::deny(client.nick() + " JOIN " + name
+					+ " -> 403 invalid channel name");
 			return;
 		}
 
 		Channel* channel = server.findChannel(name);
 		if (channel == 0) {
 			// 新規作成: コンストラクタが作成者を member+operator に登録する。
-			sendJoinReplies(server, client,
-					*server.getOrCreateChannel(name, client));
+			Channel* created = server.getOrCreateChannel(name, client);
+			sendJoinReplies(server, client, *created);
+			Log::memb("> " + client.nick() + " joined " + created->name()
+					+ " (creator, +o)");
 			return;
 		}
 
@@ -129,6 +148,8 @@ namespace {
 		channel->addMember(client);
 		channel->clearInvite(client);
 		sendJoinReplies(server, client, *channel);
+		Log::memb("> " + client.nick() + " joined " + channel->name()
+				+ " (" + memberCountText(*channel) + ")");
 	}
 }
 

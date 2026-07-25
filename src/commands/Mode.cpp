@@ -8,6 +8,7 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
@@ -357,7 +358,10 @@ void ModeCommand::execute(Server& server, Client& client, const Message& msg) {
 	ModeChanges changes;
 	applyModes(server, client, *channel, modestr, msg, changes);
 	if (changes.any() == true) {
+		const std::string applied = buildAppliedString(changes);
 		channel->broadcast(Reply::from(client.prefix(),
-				"MODE " + channel->name() + " " + buildAppliedString(changes)));
+				"MODE " + channel->name() + " " + applied));
+		Log::mode("@ " + client.nick() + " set " + channel->name() + " "
+				+ applied);
 	}
 }

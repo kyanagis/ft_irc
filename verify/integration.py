@@ -361,6 +361,23 @@ def test_quit(port):
     b.close()
 
 
+def check_server_log(log):
+    # サーバ側ターミナル出力（起動バナー＋イベントログ）の回帰ガード。
+    # ここまでのテストが接続/登録/チャンネル生成/破棄/拒否を必ず踏んでいるので、
+    # 各カテゴリの行がログに現れることを機械検査する。
+    check("startup banner printed",
+          "ircserv 1.0" in log and "listening on 0.0.0.0:" in log,
+          repr(log[:200]))
+    check("log records accepted connections", "CONN" in log and "clients:" in log)
+    check("log records registration", "AUTH" in log and "registered" in log)
+    check("log records channel creation", "created by" in log)
+    check("log records channel destruction", "destroyed" in log)
+    check("log records membership changes", "MEMB" in log)
+    check("log records rejected commands", "DENY" in log)
+    check("log prints shutdown summary",
+          "shutting down" in log and "uptime" in log)
+
+
 def main():
     port = free_port()
     proc = start_server(port)
@@ -418,6 +435,9 @@ def main():
     # LSan が leak を報告すると exit_rc != 0 になり、このチェックが赤にする。
     check("server shuts down cleanly on SIGTERM (rc==0; enables LSan leak check + profraw)",
           exit_rc == 0, "exit_rc=%r" % exit_rc)
+
+    if os.environ.get("IRC_TEST_REGISTRATION") == "1":
+        check_server_log(log)
 
     if _skipped:
         print("skipped (unimplemented): " + ", ".join(_skipped))

@@ -5,6 +5,7 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
@@ -14,6 +15,14 @@ namespace {
 			const std::string& detail) {
 		server.sendLine(client, Reply::numeric(server.serverName(), code,
 				client.nick(), detail));
+	}
+
+	// ログ用にトピックを短く切る（長文で1行が流れるのを防ぐ）
+	std::string preview(const std::string& s) {
+		if (s.size() <= 60) {
+			return s;
+		}
+		return s.substr(0, 57) + "...";
 	}
 }
 
@@ -57,4 +66,6 @@ void TopicCommand::execute(Server& server, Client& client, const Message& msg) {
 	channel->setTopic(msg.param(1), client.nick());
 	channel->broadcast(Reply::from(client.prefix(),
 			"TOPIC " + channel->name() + " :" + msg.param(1)));
+	Log::mode("@ " + client.nick() + " set topic on " + channel->name()
+			+ ": \"" + preview(msg.param(1)) + "\"");
 }

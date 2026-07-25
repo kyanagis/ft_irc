@@ -4,7 +4,9 @@
 #include <map>
 #include <vector>
 #include <string>
+#include <cstddef>
 #include <csignal>
+#include <ctime>
 #include <poll.h>
 
 #include "Socket.hpp"
@@ -52,12 +54,17 @@ private:
 	void sweepClients();
 	void announceQuit(Client& client, const std::string& reason);
 	void finalize(Client& client);
+	void logStartup() const;
+	void logShutdown() const;
 
 	Socket                          _listen;
 	int                             _port;
 	std::string                     _password;
 	std::string                     _serverName;
 	std::string                     _createdAt;
+	std::time_t                     _startedAt;
+	unsigned long                   _totalConnections;   // 累計accept数（ログ用）
+	std::size_t                     _peakClients;        // 同時接続の最大（ログ用）
 	std::map<int, Client*>          _clients;
 	std::map<std::string, Channel*> _channels;
 	std::vector<struct pollfd>      _pollfds;
