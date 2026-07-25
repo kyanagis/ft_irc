@@ -21,7 +21,8 @@ private:
 	CommandDispatcher(const CommandDispatcher&);
 	CommandDispatcher& operator=(const CommandDispatcher&);
 
-	void registerCommand(const std::string& name, ACommand* command);
+	void registerCommand(const char* name, ACommand* command);
+	void clearCommands();
 
 	std::map<std::string, ACommand*> _table;
 };
