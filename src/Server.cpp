@@ -15,6 +15,7 @@
 
 #include "Channel.hpp"
 #include "Client.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "StringUtil.hpp"
@@ -36,6 +37,24 @@ namespace {
 					std::tolower(static_cast<unsigned char>(r[i])));
 		}
 		return r;
+	}
+
+	// ログ用の稼働時間表記（1h2m3s / 2m3s / 3s）
+	std::string formatDuration(std::time_t sec) {
+		if (sec < 0) {
+			sec = 0;
+		}
+		long total = static_cast<long>(sec);
+		std::string r;
+		if (total >= 3600) {
+			r += StringUtil::toString(total / 3600) + "h";
+			total %= 3600;
+		}
+		if (!r.empty() || total >= 60) {
+			r += StringUtil::toString(total / 60) + "m";
+			total %= 60;
+		}
+		return r + StringUtil::toString(total) + "s";
 	}
 
 	// reason を §2.3.1（NUL/CR/LF不可）で無害化し，§2.3（≤512, CRLF含む）に収めた ERROR 行を作る
@@ -65,6 +84,9 @@ Server::Server(int port, const std::string& password)
 			_password(password),
 			_serverName("ircserv"),
 			_createdAt("(startup)"),
+			_startedAt(std::time(0)),
+			_totalConnections(0),
+			_peakClients(0),
 			_clients(),
 			_channels(),
 			_pollfds(),
@@ -121,6 +143,9 @@ Channel* Server::getOrCreateChannel(const std::string& name, Client& creator) {
 	}
 	Channel* channel = new Channel(name, creator);
 	_channels[key] = channel;
+	Log::chan("# " + channel->name() + " created by " + Log::who(creator)
+			+ " (channels: " + StringUtil::toString(
+					static_cast<long>(_channels.size())) + ")");
 	return channel;
 }
 
@@ -128,8 +153,11 @@ void Server::removeEmptyChannel(Channel* channel) {
 	if (channel == 0 || !channel->isEmpty()) {
 		return;
 	}
-	_channels.erase(lowerAscii(channel->name()));
+	const std::string name = channel->name();   // delete後に使うのでコピー
+	_channels.erase(lowerAscii(name));
 	delete channel;
+	Log::chan("# " + name + " destroyed, last member left (channels: "
+			+ StringUtil::toString(static_cast<long>(_channels.size())) + ")");
 }
 
 const std::string& Server::password() const {
@@ -151,6 +179,37 @@ void Server::requestStop(int signum) {
 
 void Server::setup() {
 	_listen.openListen(_port);
+}
+
+// 起動バナー＋設定パネル．listen 成功後に呼ぶ（失敗時は Fatal だけ出す）
+void Server::logStartup() const {
+	Log::banner(_serverName, SERVER_VERSION);
+	Log::field("port", StringUtil::toString(_port));
+	Log::field("password", "set ("
+			+ StringUtil::toString(static_cast<long>(_password.size()))
+			+ " chars)");
+	Log::field("started", _createdAt);
+	Log::field("limits", "accept "
+			+ StringUtil::toString(MAX_ACCEPT) + "/loop  reg timeout "
+			+ StringUtil::toString(static_cast<long>(REG_TIMEOUT_SEC))
+			+ "s  poll " + StringUtil::toString(POLL_TIMEOUT_MS) + "ms");
+	Log::field("log", std::string("trace ")
+			+ (Log::traceEnabled() ? "on" : "off (set IRC_TRACE=1)"));
+	Log::rule();
+	Log::info("listening on 0.0.0.0:" + StringUtil::toString(_port));
+	Log::info("waiting for clients (^C to stop)");
+}
+
+void Server::logShutdown() const {
+	Log::info("signal received, shutting down");
+	Log::info("uptime " + formatDuration(std::time(0) - _startedAt)
+			+ "  connections " + StringUtil::toString(
+					static_cast<long>(_totalConnections))
+			+ " (peak " + StringUtil::toString(static_cast<long>(_peakClients))
+			+ " at once)  open channels "
+			+ StringUtil::toString(static_cast<long>(_channels.size())));
+	Log::info("closing " + StringUtil::toString(
+			static_cast<long>(_clients.size())) + " client socket(s), bye");
 }
 
 void Server::rebuildPollFds() {
@@ -232,6 +291,8 @@ void Server::run() {
 	std::signal(SIGTERM, Server::requestStop);
 	std::signal(SIGPIPE, SIG_IGN);
 
+	logStartup();
+
 	while (_running) {
 		rebuildPollFds();
 
@@ -295,6 +356,8 @@ void Server::run() {
 
 		sweepClients();
 	}
+
+	logShutdown();
 }
 
 void Server::acceptClient() {
@@ -311,10 +374,19 @@ void Server::acceptClient() {
 		}
 		catch (...) {
 			close(fd);
+			Log::warn("! dropped connection from " + host
+					+ ": client allocation failed");
 			continue;
 		}
 		_clients[fd] = client;
 		accepted++;
+		++_totalConnections;
+		if (_clients.size() > _peakClients) {
+			_peakClients = _clients.size();
+		}
+		Log::conn("+ " + host + " fd " + StringUtil::toString(fd)
+				+ " (clients: " + StringUtil::toString(
+						static_cast<long>(_clients.size())) + ")");
 	}
 }
 
@@ -412,6 +484,9 @@ void Server::completeRegistration(Client& client) {
 		return;
 	}
 	client.markRegistered();
+	Log::auth("* " + client.prefix() + " registered (fd "
+			+ StringUtil::toString(client.fd()) + ", realname \""
+			+ client.realname() + "\")");
 
 	const std::string& name = _serverName;
 	const std::string& nick = client.nick();
@@ -448,8 +523,12 @@ void Server::announceQuit(Client& client, const std::string& reason) {
 		}
 		channel->removeMember(client);
 		if (channel->isEmpty()) {
+			const std::string name = channel->name();   // delete後に使うのでコピー
 			delete channel;
 			_channels.erase(it++);
+			Log::chan("# " + name + " destroyed, last member left (channels: "
+					+ StringUtil::toString(static_cast<long>(_channels.size()))
+					+ ")");
 		} else {
 			++it;
 		}
@@ -475,8 +554,11 @@ void Server::finalize(Client& client) {
 
 // 即時切断。ソケットが死んでいる/送信バッファ満杯でERRORを送れない経路用（ERRORは付けない）。
 void Server::disconnect(Client& client, const std::string& reason) {
+	const std::string label = Log::who(client);   // finalize後は client が無いので先に取る
 	announceQuit(client, reason);
 	finalize(client);
+	Log::conn("- " + label + " disconnected: " + reason + " (clients: "
+			+ StringUtil::toString(static_cast<long>(_clients.size())) + ")");
 }
 
 // 猶予切断: RFC2812 §3.7.4/§3.1.7 の ERROR を _outBuf に積み，POLLOUT で送り切ってから
@@ -485,4 +567,7 @@ void Server::gracefulClose(Client& client, const std::string& reason) {
 	announceQuit(client, reason);
 	client.appendOutput(buildErrorLine(client.host(), reason));
 	client.markReadClosed();
+	Log::conn("~ " + Log::who(client) + " closing: " + reason + " (flushing "
+			+ StringUtil::toString(static_cast<long>(client.outBuffer().size()))
+			+ "B)");
 }

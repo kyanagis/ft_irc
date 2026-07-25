@@ -5,12 +5,18 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
 #include "StringUtil.hpp"
 
 namespace {
+
+// 中継の記録はメタ情報だけ（本文は残さない）
+std::string bytes(const std::string& line) {
+    return StringUtil::toString(static_cast<long>(line.size())) + "B";
+}
 
 void sendToChannel(Server& server, Client& client, const std::string& target,
                    const std::string& line) {
@@ -22,15 +28,22 @@ void sendToChannel(Server& server, Client& client, const std::string& target,
         return;
     }
     channel->broadcast(line, &client);
+    Log::relay("NOTICE " + client.nick() + " -> " + channel->name() + " "
+               + bytes(line) + " to "
+               + StringUtil::toString(
+                     static_cast<long>(channel->memberCount() - 1))
+               + " member(s)");
 }
 
-void sendToUser(Server& server, const std::string& target,
+void sendToUser(Server& server, Client& client, const std::string& target,
                 const std::string& line) {
     Client* user = server.findClientByNick(target);
     if (user == 0) {
         return;
     }
     server.sendLine(*user, line);
+    Log::relay("NOTICE " + client.nick() + " -> " + user->nick() + " "
+               + bytes(line));
 }
 
 }  // namespace
@@ -64,7 +77,7 @@ void NoticeCommand::execute(Server& server, Client& client,
         if (target[0] == '#') {
             sendToChannel(server, client, target, line);
         } else {
-            sendToUser(server, target, line);
+            sendToUser(server, client, target, line);
         }
     }
 }

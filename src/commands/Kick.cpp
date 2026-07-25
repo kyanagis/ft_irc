@@ -6,6 +6,7 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
@@ -24,12 +25,18 @@ namespace {
 		if (target == 0 || !channel.hasMember(*target)) {
 			sendNumeric(server, client, Reply::ERR_USERNOTINCHANNEL,
 					token + " " + channel.name() + " :They aren't on that channel");
+			Log::deny(client.nick() + " KICK " + token + " from " + channel.name()
+					+ " -> 441 not on that channel");
 			return;
 		}
 		std::string line = Reply::from(client.prefix(),
 				"KICK " + channel.name() + " " + token + " :" + comment);
 		channel.broadcast(line);
 		channel.removeMember(*target);
+		Log::memb("! " + client.nick() + " kicked " + token + " from "
+				+ channel.name() + " (" + comment + "), "
+				+ StringUtil::toString(static_cast<long>(channel.memberCount()))
+				+ " remaining");
 	}
 }
 
