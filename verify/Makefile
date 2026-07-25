@@ -11,7 +11,7 @@ COV      := -fprofile-instr-generate -fcoverage-mapping
 MCDC     := -fcoverage-mcdc
 FUZZSAN  := -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer
 
-# 検証対象のコード（
+# 純粋ロジックの検証対象
 SRCS := verify.cpp \
         ../src/Message.cpp ../src/Reply.cpp ../src/StringUtil.cpp \
         ../src/Client.cpp ../src/IrcException.cpp \
@@ -23,9 +23,13 @@ SRCS := verify.cpp \
 FUZZ_SRCS := fuzz.cpp ../src/Message.cpp ../src/Client.cpp
 
 SERVER_SRCS := $(sort $(wildcard ../src/*.cpp) $(wildcard ../src/*/*.cpp))
+SERVER_LIB_SRCS := $(filter-out ../src/main.cpp,$(SERVER_SRCS))
 
 verify: $(SRCS) spec_parser.hpp
 	$(CXX) $(CXXFLAGS) $(SAN) $(SRCS) -o $@
+
+oom: oom.cpp $(SERVER_LIB_SRCS)
+	$(CXX) $(CXXFLAGS) $(SAN) -I ../include/commands oom.cpp $(SERVER_LIB_SRCS) -o $@
 
 # ../include/commands も要る（コマンド実装のヘッダ）
 ircserv_asan: $(SERVER_SRCS)
@@ -45,6 +49,6 @@ fuzz: $(FUZZ_SRCS)
 	$(CXX) $(CXXFLAGS) $(FUZZSAN) $(FUZZ_SRCS) -o $@
 
 clean:
-	rm -f verify verify_cov ircserv_cov fuzz ircserv_asan *.profraw *.profdata cov*.json
+	rm -f verify oom verify_cov ircserv_cov fuzz ircserv_asan *.profraw *.profdata cov*.json
 
 .PHONY: clean

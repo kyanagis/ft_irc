@@ -10,7 +10,6 @@ public:
 	static const int RPL_YOURHOST         = 2;
 	static const int RPL_CREATED          = 3;
 	static const int RPL_MYINFO           = 4;
-	static const int RPL_ISUPPORT         = 5;
 	static const int RPL_CHANNELMODEIS    = 324;
 	static const int RPL_NOTOPIC          = 331;
 	static const int RPL_TOPIC            = 332;
