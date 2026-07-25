@@ -26,7 +26,8 @@ public:
 	static void deny(const std::string& text);    // エラー数値応答で拒否した操作
 
 	// 1メッセージ単位で出る高頻度ログ。既定オフ（IRC_TRACE=1 で有効）。
-	// stdout はブロッキングなので、既定では出力量をユーザ操作に比例する範囲に抑える
+	// stdout はブロッキングなので、既定では出力量をユーザ操作に比例する範囲に抑える。
+	// 呼び出し側は traceEnabled() で囲むこと（無効時に引数の文字列を組まないため）
 	static void relay(const std::string& text);   // PRIVMSG/NOTICE の中継
 	static void trace(const std::string& text);   // 受理したコマンドの生トレース
 
