@@ -73,7 +73,11 @@ void CommandDispatcher::registerCommand(const std::string& name,
 
 void CommandDispatcher::dispatch(Server& server, Client& client,
 		const Message& msg) {
-	Log::trace(Log::who(client) + " > " + traceLine(msg));
+	// 引数の組み立て自体を避けるため呼び出し側で閉じる（既定オフ）。ここは dispatch の
+	// try の外なので、確保を無条件に走らせると OOM 時に run() を抜けてしまう
+	if (Log::traceEnabled()) {
+		Log::trace(Log::who(client) + " > " + traceLine(msg));
+	}
 
 	std::map<std::string, ACommand*>::iterator it = _table.find(msg.command());
 	if (it == _table.end()) {
