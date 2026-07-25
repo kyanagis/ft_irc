@@ -37,8 +37,8 @@ void Socket::setNonBlocking(int fd) {
 }
 
 void Socket::openListen(int port) {
-	if (port < 1024 || port > 65535) {
-		throw std::runtime_error("Socket: invalid port (1024-65535)");
+	if (port < 1 || port > 65535) {
+		throw std::runtime_error("Socket: invalid port (1-65535)");
 	}
 
 	int listenFd = socket(AF_INET, SOCK_STREAM, 0);
@@ -99,11 +99,17 @@ int Socket::acceptClient(std::string& hostOut) {
 		return -1;
 	}
 
-	char buf[INET_ADDRSTRLEN];
-	if (inet_ntop(AF_INET, &clientAddr.sin_addr, buf, sizeof(buf)) != NULL) {
-		hostOut = buf;
-	} else {
-		hostOut = "unknown";
+	try {
+		char buf[INET_ADDRSTRLEN];
+		if (inet_ntop(AF_INET, &clientAddr.sin_addr, buf, sizeof(buf)) != NULL) {
+			hostOut = buf;
+		} else {
+			hostOut = "unknown";
+		}
+	}
+	catch (...) {
+		close(clientFd);
+		return -1;
 	}
 
 	return clientFd;
