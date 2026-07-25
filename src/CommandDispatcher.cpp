@@ -107,8 +107,9 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 				+ StringUtil::toString(e.code()) + " " + e.detail());
 	}
 	// 想定外の例外でもサーバは落とさない（要件N8）。応答は返さずログだけ残す。
+	// bad_alloc がここに来る場合があるので、確保しない oomWarn を使う
 	catch (const std::exception& e) {
-		Log::warn("! " + msg.command() + " from " + Log::who(client)
-				+ " raised an unexpected exception: " + e.what());
+		Log::oomWarn("unexpected exception while handling",
+				msg.command().c_str(), e.what());
 	}
 }

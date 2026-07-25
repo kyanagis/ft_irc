@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 
 #include <iostream>
@@ -64,14 +65,20 @@ namespace {
 		return std::string(code) + s + RESET;
 	}
 
-	std::string stamp() {
+	// 動的確保をしない時刻整形（OOM経路から呼ぶため char 配列に直接書く）
+	void stampInto(char* buf, std::size_t n) {
 		std::time_t now = std::time(0);
 		std::tm* tmv = std::localtime(&now);
-		char buf[16];
-		if (tmv != 0 && std::strftime(buf, sizeof(buf), "%H:%M:%S", tmv) > 0) {
-			return buf;
+		if (tmv == 0 || std::strftime(buf, n, "%H:%M:%S", tmv) == 0) {
+			std::strncpy(buf, "--:--:--", n - 1);
+			buf[n - 1] = '\0';
 		}
-		return "--:--:--";
+	}
+
+	std::string stamp() {
+		char buf[16];
+		stampInto(buf, sizeof(buf));
+		return buf;
 	}
 
 	std::string pad(const std::string& s, std::size_t width) {
@@ -98,6 +105,37 @@ namespace {
 		std::cout << paint(DIM, "[" + stamp() + "]") << " "
 				<< paint(color, pad(tag, TAG_WIDTH)) << "  " << sanitize(text)
 				<< std::endl;
+	}
+
+	// 動的確保をしない emit。std::string を一切作らず、色も逐次 << で出す。
+	// OOM ハンドラから呼ばれるので paint()/pad()/sanitize() は使えない
+	void emitNoAlloc(const char* tag, const char* color, const char* a,
+			const char* b, const char* c) {
+		char ts[16];
+		stampInto(ts, sizeof(ts));
+		const bool col = colorOn();
+		if (col) {
+			std::cout << DIM;
+		}
+		std::cout << "[" << ts << "]";
+		if (col) {
+			std::cout << RESET << " " << color;
+		} else {
+			std::cout << " ";
+		}
+		std::cout << tag;
+		if (col) {
+			std::cout << RESET;
+		}
+		std::cout << "   ! " << a;
+		if (b != 0) {
+			std::cout << " " << b;
+		}
+		if (c != 0) {
+			std::cout << ": " << c;
+		}
+		std::cout << "\n";
+		std::cout.flush();
 	}
 }
 
@@ -156,17 +194,32 @@ void Log::mode(const std::string& text) {
 	emit("MODE", MAGENT, text);
 }
 
-void Log::relay(const std::string& text) {
-	emit("MSG", GRAY, text);
-}
-
 void Log::deny(const std::string& text) {
 	emit("DENY", YELLOW, text);
+}
+
+// relay/trace は1メッセージ毎に出るので既定オフ。stdout はブロッキングなので、
+// 既定では悪意ある flood でログ量が無制限に増えないようにしておく
+void Log::relay(const std::string& text) {
+	if (traceEnabled()) {
+		emit("MSG", GRAY, text);
+	}
 }
 
 void Log::trace(const std::string& text) {
 	if (traceEnabled()) {
 		emit("RECV", GRAY, text);
+	}
+}
+
+void Log::oomWarn(const char* what, const char* detail, const char* extra) {
+	try {
+		emitNoAlloc("WARN", YELLOW, what, detail, extra);
+	}
+	// メモリ不足の経路。ここで投げ返すと run() を抜けて main が終了してしまうので
+	// （要件: OOMでも落ちない・予期せず終了しない）意図的に握り潰す
+	// NOLINTNEXTLINE(bugprone-empty-catch)
+	catch (...) {
 	}
 }
 

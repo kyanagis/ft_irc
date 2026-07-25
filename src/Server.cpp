@@ -193,7 +193,7 @@ void Server::logStartup() const {
 			+ StringUtil::toString(MAX_ACCEPT) + "/loop  reg timeout "
 			+ StringUtil::toString(static_cast<long>(REG_TIMEOUT_SEC))
 			+ "s  poll " + StringUtil::toString(POLL_TIMEOUT_MS) + "ms");
-	Log::field("log", std::string("trace ")
+	Log::field("log", std::string("per-message trace ")
 			+ (Log::traceEnabled() ? "on" : "off (set IRC_TRACE=1)"));
 	Log::rule();
 	Log::info("listening on 0.0.0.0:" + StringUtil::toString(_port));
@@ -374,8 +374,8 @@ void Server::acceptClient() {
 		}
 		catch (...) {
 			close(fd);
-			Log::warn("! dropped connection from " + host
-					+ ": client allocation failed");
+			// ここはメモリ不足の経路。通常ログは std::string を組むので使えない
+			Log::oomWarn("dropped a connection: client allocation failed");
 			continue;
 		}
 		_clients[fd] = client;
