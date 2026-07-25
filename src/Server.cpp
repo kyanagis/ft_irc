@@ -1,6 +1,5 @@
 #include "Server.hpp"
 
-#include <cctype>
 #include <cerrno>
 #include <csignal>
 #include <cstddef>
@@ -27,13 +26,25 @@ namespace {
 	const std::time_t REG_TIMEOUT_SEC = 60;  // connectからこの秒数で登録未完なら切断
 	const std::time_t CLOSE_TIMEOUT_SEC = 10;  // 猶予切断のflushがこの秒数で終わらなければ強制finalize
 	const int MAX_ACCEPT = 16;
+	const std::size_t MAX_READ_BYTES_PER_EVENT = 64UL * 1024;
+	const int MAX_RECV_PER_EVENT = 16;
 
-	// nick/チャンネル名はcase-insensitive（ASCIIのみ）で照合する
-	std::string lowerAscii(const std::string& s) {
+	// RFC 2812 §2.2 のcasemapping。ASCII英字に加え、{}|^ は []\~ と
+	// それぞれ同一視する。チャンネル鍵の比較には使用しない。
+	std::string ircCaseFold(const std::string& s) {
 		std::string r(s);
 		for (std::string::size_type i = 0; i < r.size(); ++i) {
-			r[i] = static_cast<char>(
-					std::tolower(static_cast<unsigned char>(r[i])));
+			if (r[i] >= 'A' && r[i] <= 'Z') {
+				r[i] = static_cast<char>(r[i] - 'A' + 'a');
+			} else if (r[i] == '{') {
+				r[i] = '[';
+			} else if (r[i] == '}') {
+				r[i] = ']';
+			} else if (r[i] == '|') {
+				r[i] = '\\';
+			} else if (r[i] == '^') {
+				r[i] = '~';
+			}
 		}
 		return r;
 	}
@@ -94,10 +105,11 @@ Server::~Server() {
 }
 
 Client* Server::findClientByNick(const std::string& nick) {
-	std::string key = lowerAscii(nick);
+	std::string key = ircCaseFold(nick);
 	for (std::map<int, Client*>::iterator it = _clients.begin();
 			it != _clients.end(); ++it) {
-		if (it->second->hasNick() && lowerAscii(it->second->nick()) == key) {
+		if (it->second->hasNick()
+				&& ircCaseFold(it->second->nick()) == key) {
 			return it->second;
 		}
 	}
@@ -106,7 +118,7 @@ Client* Server::findClientByNick(const std::string& nick) {
 
 Channel* Server::findChannel(const std::string& name) {
 	std::map<std::string, Channel*>::iterator it =
-			_channels.find(lowerAscii(name));
+			_channels.find(ircCaseFold(name));
 	if (it == _channels.end()) {
 		return 0;
 	}
@@ -114,13 +126,26 @@ Channel* Server::findChannel(const std::string& name) {
 }
 
 Channel* Server::getOrCreateChannel(const std::string& name, Client& creator) {
-	std::string key = lowerAscii(name);
+	std::string key = ircCaseFold(name);
 	std::map<std::string, Channel*>::iterator it = _channels.find(key);
 	if (it != _channels.end()) {
 		return it->second;
 	}
 	Channel* channel = new Channel(name, creator);
-	_channels[key] = channel;
+	try {
+		std::pair<std::map<std::string, Channel*>::iterator, bool> inserted =
+				_channels.insert(std::make_pair(key, channel));
+		if (!inserted.second) {
+			channel->removeMember(creator);
+			delete channel;
+			return inserted.first->second;
+		}
+	}
+	catch (...) {
+		channel->removeMember(creator);
+		delete channel;
+		throw;
+	}
 	return channel;
 }
 
@@ -128,7 +153,7 @@ void Server::removeEmptyChannel(Channel* channel) {
 	if (channel == 0 || !channel->isEmpty()) {
 		return;
 	}
-	_channels.erase(lowerAscii(channel->name()));
+	_channels.erase(ircCaseFold(channel->name()));
 	delete channel;
 }
 
@@ -262,6 +287,9 @@ void Server::run() {
 					if (re & POLLIN) {
 						acceptClient();
 					}
+					if (re & (POLLERR | POLLHUP | POLLNVAL)) {
+						throw std::runtime_error("listening socket poll error");
+					}
 					continue;
 				}
 
@@ -269,32 +297,33 @@ void Server::run() {
 				if (it == _clients.end()) {
 					continue;
 				}
-				Client* client = it->second;
-
-				// NOLINTBEGIN(clang-analyzer-cplusplus.NewDelete): disconnect 後は find(fd)==end() で
-				// 必ず continue するため UAF にならない（解析器の誤検知）
 				try {
 					if (re & POLLIN) {
-						handleReadable(*client);
-						if (_clients.find(fd) == _clients.end()) {
+						handleReadable(fd);
+						it = _clients.find(fd);
+						if (it == _clients.end()) {
 							continue;
 						}
 					}
 					if (re & POLLOUT) {
-						handleWritable(*client);
-						if (_clients.find(fd) == _clients.end()) {
+						handleWritable(fd);
+						it = _clients.find(fd);
+						if (it == _clients.end()) {
 							continue;
 						}
-						if (client->isReadClosed()
-								&& !client->hasPendingOutput()) {
-							disconnect(*client, "client closed connection");
+						if (it->second->isReadClosed()
+								&& !it->second->hasPendingOutput()) {
+							disconnect(*it->second, "client closed connection");
 							continue;
 						}
 					}
 					if (re & (POLLERR | POLLHUP | POLLNVAL)) {
-						if (!(client->isReadClosed()
-								&& client->hasPendingOutput())) {
-							disconnect(*client, "poll error/hangup");
+						// POLLHUPはeventsの指定に関係なく繰り返し返る。保留出力を
+						// 待って無視するとclose timeoutまでbusy loopになるため、
+						// この周のPOLLOUT送信を一度試した後は即時切断する。
+						it = _clients.find(fd);
+						if (it != _clients.end()) {
+							disconnect(*it->second, "poll error/hangup");
 						}
 					}
 				}
@@ -308,13 +337,15 @@ void Server::run() {
 						dropQuietly(*jt->second);
 					}
 				}
-				// NOLINTEND(clang-analyzer-cplusplus.NewDelete)
 			}
 
 			sweepClients();
 		}
 		catch (const std::bad_alloc&) {
-			continue;  // pollfd構築/accept/sweep等の割当枯渇: この周は捨て次周で再試行
+			if (!_clients.empty()) {
+				dropQuietly(*_clients.begin()->second);
+			}
+			continue;
 		}
 	}
 }
@@ -341,48 +372,74 @@ void Server::acceptClient() {
 	}
 }
 
-void Server::handleReadable(Client& client) {
+void Server::handleReadable(int fd) {
+	std::map<int, Client*>::iterator it = _clients.find(fd);
+	if (it == _clients.end()) {
+		return;
+	}
+	Client& client = *it->second;
 	char buf[READ_CHUNK];
-	ssize_t n = recv(client.fd(), buf, sizeof(buf), 0);
-	while (n > 0) {
+	ssize_t n = -1;
+	std::size_t bytesRead = 0;
+	int recvCount = 0;
+	int recvErrno = 0;
+
+	// 常に送信し続ける1クライアントが他fdをstarveさせないよう、pollイベント
+	// 1回あたりのrecv回数と総byte数を制限する。未読データは次周もPOLLINになる。
+	while (recvCount < MAX_RECV_PER_EVENT
+			&& bytesRead < MAX_READ_BYTES_PER_EVENT) {
+		std::size_t remaining = MAX_READ_BYTES_PER_EVENT - bytesRead;
+		std::size_t request = remaining < sizeof(buf) ? remaining : sizeof(buf);
+		n = recv(client.fd(), buf, request, 0);
+		++recvCount;
+		if (n <= 0) {
+			if (n < 0) {
+				recvErrno = errno;
+			}
+			break;
+		}
 		client.appendInput(buf, static_cast<std::size_t>(n));
-		n = recv(client.fd(), buf, sizeof(buf), 0);
+		bytesRead += static_cast<std::size_t>(n);
 	}
-	// errno は pumpLines 内の send 等で上書きされる前に確保する
-	int recvErrno = errno;
 
-	int fd = client.fd();
-	pumpLines(client);
-	if (_clients.find(fd) == _clients.end()) {
+	pumpLines(fd);
+	it = _clients.find(fd);
+	if (it == _clients.end()) {
 		return;
 	}
+	Client& current = *it->second;
 	// QUIT等で猶予切断が始まったら，残りの入力/EOF処理はせず flush→finalize に任せる
-	if (client.isReadClosed()) {
+	if (current.isReadClosed()) {
 		return;
 	}
 
-	if (client.inputOverflow()) {
-		disconnect(client, "input line too long");
+	if (current.inputOverflow()) {
+		disconnect(current, "input line too long");
 		return;
 	}
-	if (client.outputOverflow()) {
-		disconnect(client, "send queue exceeded");
+	if (current.outputOverflow()) {
+		disconnect(current, "send queue exceeded");
 		return;
 	}
 
 	if (n == 0) {
-		if (client.hasPendingOutput()) {
-			client.markReadClosed();
+		if (current.hasPendingOutput()) {
+			current.markReadClosed();
 		} else {
-			disconnect(client, "client closed connection");
+			disconnect(current, "client closed connection");
 		}
 	} else if (n < 0 && recvErrno != EAGAIN && recvErrno != EWOULDBLOCK
 			&& recvErrno != EINTR) {
-		disconnect(client, "recv error");
+		disconnect(current, "recv error");
 	}
 }
 
-void Server::handleWritable(Client& client) {
+void Server::handleWritable(int fd) {
+	std::map<int, Client*>::iterator it = _clients.find(fd);
+	if (it == _clients.end()) {
+		return;
+	}
+	Client& client = *it->second;
 	std::string& out = client.outBuffer();
 	if (out.empty()) {
 		return;
@@ -398,21 +455,33 @@ void Server::handleWritable(Client& client) {
 	// EAGAIN/EWOULDBLOCK/EINTR と n==0 はバッファ保持で次の POLLOUT に回す
 }
 
-void Server::pumpLines(Client& client) {
-	int fd = client.fd();
+void Server::pumpLines(int fd) {
 	std::string line;
-	while (client.extractLine(line)) {
+	while (true) {
+		std::map<int, Client*>::iterator it = _clients.find(fd);
+		if (it == _clients.end()) {
+			return;
+		}
+		Client& client = *it->second;
+		if (!client.extractLine(line)) {
+			return;
+		}
+		if (client.inputProtocolError()) {
+			disconnect(client, "invalid message format or line too long");
+			return;
+		}
 		Message msg = Message::parse(line);
 		if (msg.empty()) {
 			continue;
 		}
 		_dispatcher.dispatch(*this, client, msg);
 		// dispatch中にQUIT等で切断済みならclientは解放されている
-		if (_clients.find(fd) == _clients.end()) {
+		it = _clients.find(fd);
+		if (it == _clients.end()) {
 			return;
 		}
 		// QUIT等で猶予切断が始まったら，同パケットの後続行は処理しない
-		if (client.isReadClosed()) {
+		if (it->second->isReadClosed()) {
 			return;
 		}
 	}
@@ -424,7 +493,8 @@ void Server::queueMessage(Client& client, const std::string& message) {
 
 // 1行をCRLF終端で送信キューへ積む。コマンドはこちらを使う（queueMessageは生バイト用）
 void Server::sendLine(Client& client, const std::string& line) {
-	client.appendOutput(StringUtil::capLine(line) + IRC_CRLF);
+	std::string queued = StringUtil::capLine(line) + IRC_CRLF;
+	client.appendOutput(queued);
 }
 
 // PASS/NICK/USER が処理後に呼ぶ共通ロジック。pass/nick/user が揃うまでは何もしない。
@@ -445,11 +515,7 @@ void Server::completeRegistration(Client& client) {
 	sendLine(client, Reply::numeric(name, Reply::RPL_CREATED, nick,
 			":This server was created " + _createdAt));
 	sendLine(client, Reply::numeric(name, Reply::RPL_MYINFO, nick,
-			name + " " + SERVER_VERSION + " o itkol"));
-	// 005 ISUPPORT: 照合はASCII固定なのでCASEMAPPING=asciiを明示（鍵+kはcase-sensitiveのまま）
-	sendLine(client, Reply::numeric(name, Reply::RPL_ISUPPORT, nick,
-			"CASEMAPPING=ascii CHANTYPES=# CHANMODES=,k,l,it PREFIX=(o)@ "
-			"CHANNELLEN=50 NICKLEN=9 :are supported by this server"));
+			name + " " + SERVER_VERSION + " - itkol"));
 }
 
 // 参加中の各チャンネルへ QUIT を1回ずつ通知し，全チャンネルから除去する（本人は除外）。
