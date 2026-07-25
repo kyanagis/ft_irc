@@ -376,6 +376,10 @@ def check_server_log(log):
     check("log records rejected commands", "DENY" in log)
     check("log prints shutdown summary",
           "shutting down" in log and "uptime" in log)
+    # stdout はブロッキングなので、1メッセージ毎に出る高頻度ログ（MSG/RECV）は既定オフ。
+    # ここまでで PRIVMSG/NOTICE を何度も流しているので、出ていたら既定が壊れている。
+    check("per-message logging stays off by default",
+          "B to " not in log and "RECV" not in log)
 
 
 def main():
