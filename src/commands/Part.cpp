@@ -6,6 +6,7 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
@@ -41,6 +42,12 @@ namespace {
 
 		channel->broadcast(line);
 		channel->removeMember(client);
+		// removeEmptyChannel が channel を消しうるので、その前にログを出す
+		Log::memb("< " + client.nick() + " left " + channel->name()
+				+ (appendReason ? " (" + reason + ")" : std::string())
+				+ ", " + StringUtil::toString(
+						static_cast<long>(channel->memberCount()))
+				+ " remaining");
 		server.removeEmptyChannel(channel);
 	}
 }

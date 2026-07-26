@@ -5,12 +5,18 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
 #include "StringUtil.hpp"
 
 namespace {
+
+// 中継の記録はメタ情報だけ（本文は残さない）
+std::string bytes(const std::string& line) {
+    return StringUtil::toString(static_cast<long>(line.size())) + "B";
+}
 
 void sendToChannel(Server& server, Client& client, const std::string& target,
                    const std::string& line) {
@@ -30,6 +36,13 @@ void sendToChannel(Server& server, Client& client, const std::string& target,
         return;
     }
     channel->broadcast(line, &client);
+    if (Log::traceEnabled()) {   // 既定オフ。文字列の組み立てもしない
+        Log::relay("PRIVMSG " + client.nick() + " -> " + channel->name() + " "
+                   + bytes(line) + " to "
+                   + StringUtil::toString(
+                         static_cast<long>(channel->memberCount() - 1))
+                   + " member(s)");
+    }
 }
 
 void sendToUser(Server& server, Client& client, const std::string& target,
@@ -43,6 +56,10 @@ void sendToUser(Server& server, Client& client, const std::string& target,
         return;
     }
     server.sendLine(*user, line);
+    if (Log::traceEnabled()) {
+        Log::relay("PRIVMSG " + client.nick() + " -> " + user->nick() + " "
+                   + bytes(line));
+    }
 }
 
 }  // namespace
