@@ -54,6 +54,8 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	catch (const std::exception& e) {
+		// ここは Log を使わない: catch 内で throw しうる関数を呼ぶと main から
+		// 例外が漏れうる（bugprone-exception-escape）．バナー前なので素の cerr で足りる
 		std::cerr << "Fatal: " << e.what() << '\n';
 		return 1;
 	}

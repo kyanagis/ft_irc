@@ -3,6 +3,7 @@
 #include "Channel.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
@@ -47,6 +48,8 @@ void InviteCommand::execute(Server& server, Client& client,
     server.sendLine(*targetClient,
                     Reply::from(client.prefix(),
                                 "INVITE " + targetNick + " :" + channelName));
+    Log::memb("^ " + client.nick() + " invited " + targetNick + " to "
+              + channel->name());
 }
 
 bool InviteCommand::needsRegistration() const { return true; }

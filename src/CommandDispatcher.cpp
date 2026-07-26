@@ -6,9 +6,11 @@
 #include "ACommand.hpp"
 #include "Client.hpp"
 #include "IrcException.hpp"
+#include "Log.hpp"
 #include "Message.hpp"
 #include "Reply.hpp"
 #include "Server.hpp"
+#include "StringUtil.hpp"
 #include "Join.hpp"
 #include "Pass.hpp"
 #include "Nick.hpp"
@@ -23,6 +25,20 @@
 #include "Privmsg.hpp"
 #include "Notice.hpp"
 #include "Invite.hpp"
+
+namespace {
+	// IRC_TRACE=1 用の1行表記．PASS の引数はログに残さない
+	std::string traceLine(const Message& msg) {
+		std::string s = msg.command();
+		if (msg.command() == "PASS") {
+			return s + " ***";
+		}
+		for (std::size_t i = 0; i < msg.size(); ++i) {
+			s += " " + msg.param(i);
+		}
+		return s;
+	}
+}
 
 CommandDispatcher::CommandDispatcher() {
 	try {
@@ -80,11 +96,19 @@ void CommandDispatcher::registerCommand(const char* name,
 
 void CommandDispatcher::dispatch(Server& server, Client& client,
 		const Message& msg) {
+	// 引数の組み立て自体を避けるため呼び出し側で閉じる（既定オフ）。ここは dispatch の
+	// try の外なので、確保を無条件に走らせると OOM 時に run() を抜けてしまう
+	if (Log::traceEnabled()) {
+		Log::trace(Log::who(client) + " > " + traceLine(msg));
+	}
+
 	std::map<std::string, ACommand*>::iterator it = _table.find(msg.command());
 	if (it == _table.end()) {
 		server.sendLine(client, Reply::numeric(server.serverName(),
 				Reply::ERR_UNKNOWNCOMMAND, client.nick(),
 				msg.command() + " :Unknown command"));
+		Log::deny(Log::who(client) + " " + msg.command()
+				+ " -> 421 unknown command");
 		return;
 	}
 
@@ -93,6 +117,8 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		server.sendLine(client, Reply::numeric(server.serverName(),
 				Reply::ERR_NOTREGISTERED, client.nick(),
 				":You have not registered"));
+		Log::deny(Log::who(client) + " " + msg.command()
+				+ " -> 451 not registered");
 		return;
 	}
 
@@ -104,11 +130,17 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 	catch (const IrcException& e) {
 		server.sendLine(client, Reply::numeric(server.serverName(), e.code(),
 				e.target(), e.detail()));
+		Log::deny(Log::who(client) + " " + msg.command() + " -> "
+				+ StringUtil::toString(e.code()) + " " + e.detail());
 	}
+	// OOMは run() 側で1クライアントを切って回復させるので、ここでは通さない
 	catch (const std::bad_alloc&) {
 		throw;
 	}
-	// NOLINTNEXTLINE(bugprone-empty-catch): 想定外の例外でもサーバを落とさない（要件N8）。意図的に握り潰す。
-	catch (const std::exception&) {
+	// 想定外の例外でもサーバは落とさない（要件N8）。応答は返さずログだけ残す。
+	// catch内で確保して投げ直すのを避けるため、確保しない oomWarn を使う
+	catch (const std::exception& e) {
+		Log::oomWarn("unexpected exception while handling",
+				msg.command().c_str(), e.what());
 	}
 }
