@@ -29,6 +29,7 @@ docs/
 # 検証ハーネス：ソース/種コーパスは追跡（CIで実行）、ビルド成果物のみ除外
 verify/verify
 verify/verify_cov
+verify/oom
 verify/fuzz
 verify/ircserv_asan
 verify/ircserv_cov

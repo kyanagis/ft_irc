@@ -33,6 +33,7 @@ public:
 
 	void         appendInput(const char* data, std::size_t n);
 	bool         extractLine(std::string& out);
+	bool         inputProtocolError() const;
 	void         appendOutput(const std::string& raw);
 	std::string& outBuffer();
 	bool         hasPendingOutput() const;
@@ -63,6 +64,8 @@ private:
 	bool                  _hasUser;
 	bool                  _registered;
 	bool                  _readClosed;
+	bool                  _inputProtocolError;
+	bool                  _outputOverflow;
 	std::set<std::string> _channels;
 	std::time_t           _connectedAt;
 	std::time_t           _closingSince;
