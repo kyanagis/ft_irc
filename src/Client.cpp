@@ -18,6 +18,8 @@ Client::Client(int fd, const std::string& host)
 			_hasUser(false),
 			_registered(false),
 			_readClosed(false),
+			_inputProtocolError(false),
+			_outputOverflow(false),
 			_channels(),
 			_connectedAt(std::time(0)),
 			_closingSince(0) {
@@ -106,22 +108,38 @@ bool Client::extractLine(std::string& out) {
 
 	std::string line = _inBuf.substr(0, pos);
 	_inBuf.erase(0, pos + 1);
-
-	// RFC2812 §2.3.1: NUL/CR/LF はメッセージ内に不可．混入分を除去（末尾・埋め込み両方）
-	std::string clean;
-	clean.reserve(line.size());
+	// RFC 2812 §2.3/§2.3.1: 各メッセージはCRLF終端で、終端を含めて
+	// 512 octets以内。bare LFや埋め込みNUL/CRは実行せず接続を閉じる。
+	if (pos + 1 > MAX_INPUT_LINE
+			|| line.empty() || line[line.size() - 1] != '\r') {
+		_inputProtocolError = true;
+		out.clear();
+		return true;
+	}
+	line.erase(line.size() - 1);
 	for (std::string::size_type i = 0; i < line.size(); ++i) {
-		char c = line[i];
-		if (c != '\0' && c != '\r') {  // \n は分割で既に無い
-			clean += c;
+		if (line[i] == '\0' || line[i] == '\r') {
+			_inputProtocolError = true;
+			out.clear();
+			return true;
 		}
 	}
-
-	out = clean;
+	out = line;
 	return true;
 }
 
+bool Client::inputProtocolError() const {
+	return _inputProtocolError;
+}
+
 void Client::appendOutput(const std::string& raw) {
+	if (_outputOverflow) {
+		return;
+	}
+	if (raw.size() > MAX_OUTPUT_QUEUE - _outBuf.size()) {
+		_outputOverflow = true;
+		return;
+	}
 	_outBuf += raw;
 }
 
@@ -139,7 +157,7 @@ bool Client::inputOverflow() const {
 }
 
 bool Client::outputOverflow() const {
-	return _outBuf.size() > MAX_OUTPUT_QUEUE;
+	return _outputOverflow;
 }
 
 void Client::markReadClosed() {

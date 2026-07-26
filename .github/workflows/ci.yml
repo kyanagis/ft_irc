@@ -55,6 +55,8 @@ jobs:
           UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
           ASAN_OPTIONS: abort_on_error=1
         run: ./verify/verify all
+      - name: Startup OOM rollback (every construction allocation point)
+        run: make -C verify oom && ./verify/oom
 
   fuzz:
     name: fuzz parse/extractLine (libFuzzer)
@@ -176,15 +178,15 @@ jobs:
           llvm-profdata merge all.profraw -o all.profdata
           llvm-cov export ./verify_cov -instr-profile=all.profdata $FILES > cov.json
           python3 coverage_gate.py cov.json
-      - name: Gate 2 — パーサ全数テスト単体で Message.cpp を 100% 網羅（totality の機械証明）
+      - name: Gate 2 — パーサ全数テスト＋RFC境界テストで Message.cpp を 100% 網羅
         working-directory: verify
-        # exhaustive(<=12) だけを走らせて Message.cpp が region+line+branch=100% になることを要求。
-        # 「長さ<=12 の全数列挙がパーサの全経路を踏む」= 13文字目以降に新経路が無いことの証拠
-        # （T2 置換補題と併せ、有界全数を全長へ一般化する根拠を CI で固定する）。
+        # 長さ<=12の全数差分に加え、3桁command、14 middle + trailing、
+        # 不正区切りなど長さ依存のRFC境界を専用ベクタで実行する。
         run: |
           set -euo pipefail
           LLVM_PROFILE_FILE=ex.profraw ./verify_cov exhaustive 12 >/dev/null
-          llvm-profdata merge ex.profraw -o ex.profdata
+          LLVM_PROFILE_FILE=parser.profraw ./verify_cov parser >/dev/null
+          llvm-profdata merge ex.profraw parser.profraw -o ex.profdata
           llvm-cov export ./verify_cov -instr-profile=ex.profdata ../src/Message.cpp > cov_parser.json
           python3 coverage_gate.py cov_parser.json
       - name: Upload coverage export on failure

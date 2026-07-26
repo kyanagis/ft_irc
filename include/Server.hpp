@@ -47,13 +47,14 @@ private:
 
 	void setup();
 	void acceptClient();
-	void handleReadable(Client& client);
-	void handleWritable(Client& client);
-	void pumpLines(Client& client);
+	void handleReadable(int fd);
+	void handleWritable(int fd);
+	void pumpLines(int fd);
 	void rebuildPollFds();
 	void sweepClients();
 	void announceQuit(Client& client, const std::string& reason);
 	void finalize(Client& client);
+	void dropQuietly(Client& client);
 	void logStartup() const;
 	void logShutdown() const;
 

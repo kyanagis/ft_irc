@@ -1,6 +1,7 @@
 #include "CommandDispatcher.hpp"
 
 #include <exception>
+#include <new>
 
 #include "ACommand.hpp"
 #include "Client.hpp"
@@ -40,25 +41,36 @@ namespace {
 }
 
 CommandDispatcher::CommandDispatcher() {
-	// コマンド担当がここで登録する
-	// 登録名は大文字（Message::parseがcommandを大文字化するため）
-	registerCommand("PASS", new PassCommand());
-	registerCommand("NICK", new NickCommand());
-	registerCommand("USER", new UserCommand());
-	registerCommand("JOIN", new JoinCommand());
-	registerCommand("PART", new PartCommand());
-	registerCommand("KICK", new KickCommand());
-	registerCommand("TOPIC", new TopicCommand());
-	registerCommand("MODE", new ModeCommand());
-	registerCommand("PING", new PingCommand());
-	registerCommand("CAP", new CapCommand());
-	registerCommand("QUIT", new QuitCommand());
-	registerCommand("NOTICE", new NoticeCommand());
-	registerCommand("PRIVMSG", new PrivmsgCommand());
-	registerCommand("INVITE", new InviteCommand());
+	try {
+		// コマンド担当がここで登録する
+		// 登録名は大文字（Message::parseがcommandを大文字化するため）
+		registerCommand("PASS", new PassCommand());
+		registerCommand("NICK", new NickCommand());
+		registerCommand("USER", new UserCommand());
+		registerCommand("JOIN", new JoinCommand());
+		registerCommand("PART", new PartCommand());
+		registerCommand("KICK", new KickCommand());
+		registerCommand("TOPIC", new TopicCommand());
+		registerCommand("MODE", new ModeCommand());
+		registerCommand("PING", new PingCommand());
+		registerCommand("CAP", new CapCommand());
+		registerCommand("QUIT", new QuitCommand());
+		registerCommand("NOTICE", new NoticeCommand());
+		registerCommand("PRIVMSG", new PrivmsgCommand());
+		registerCommand("INVITE", new InviteCommand());
+	}
+	catch (...) {
+		// 構築途中はデストラクタが呼ばれないため、登録済み分を明示解放する。
+		clearCommands();
+		throw;
+	}
 }
 
 CommandDispatcher::~CommandDispatcher() {
+	clearCommands();
+}
+
+void CommandDispatcher::clearCommands() {
 	for (std::map<std::string, ACommand*>::iterator it = _table.begin();
 			it != _table.end(); ++it) {
 		delete it->second;
@@ -66,9 +78,20 @@ CommandDispatcher::~CommandDispatcher() {
 	_table.clear();
 }
 
-void CommandDispatcher::registerCommand(const std::string& name,
+void CommandDispatcher::registerCommand(const char* name,
 		ACommand* command) {
-	_table[name] = command;
+	// nameのstd::string化やmapノード確保が失敗しても、新規commandを解放する。
+	try {
+		std::pair<std::map<std::string, ACommand*>::iterator, bool> inserted =
+				_table.insert(std::make_pair(std::string(name), command));
+		if (!inserted.second) {
+			delete command;
+		}
+	}
+	catch (...) {
+		delete command;
+		throw;
+	}
 }
 
 void CommandDispatcher::dispatch(Server& server, Client& client,
@@ -110,8 +133,12 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		Log::deny(Log::who(client) + " " + msg.command() + " -> "
 				+ StringUtil::toString(e.code()) + " " + e.detail());
 	}
+	// OOMは run() 側で1クライアントを切って回復させるので、ここでは通さない
+	catch (const std::bad_alloc&) {
+		throw;
+	}
 	// 想定外の例外でもサーバは落とさない（要件N8）。応答は返さずログだけ残す。
-	// bad_alloc がここに来る場合があるので、確保しない oomWarn を使う
+	// catch内で確保して投げ直すのを避けるため、確保しない oomWarn を使う
 	catch (const std::exception& e) {
 		Log::oomWarn("unexpected exception while handling",
 				msg.command().c_str(), e.what());
