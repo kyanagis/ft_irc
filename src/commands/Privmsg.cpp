@@ -24,8 +24,8 @@ void sendToChannel(Server& server, Client& client, const std::string& target,
     if (channel == 0) {
         server.sendLine(
             client,
-            Reply::numeric(server.serverName(), Reply::ERR_NOSUCHCHANNEL,
-                           client.nick(), target + " :No such channel"));
+            Reply::numeric(server.serverName(), Reply::ERR_NOSUCHNICK,
+                           client.nick(), target + " :No such nick/channel"));
         return;
     }
     if (!channel->hasMember(client)) {
@@ -36,12 +36,12 @@ void sendToChannel(Server& server, Client& client, const std::string& target,
         return;
     }
     channel->broadcast(line, &client);
-    if (Log::traceEnabled()) {   // 既定オフ。文字列の組み立てもしない
-        Log::relay("PRIVMSG " + client.nick() + " -> " + channel->name() + " "
-                   + bytes(line) + " to "
-                   + StringUtil::toString(
-                         static_cast<long>(channel->memberCount() - 1))
-                   + " member(s)");
+    if (Log::traceEnabled()) {  // 既定オフ。文字列の組み立てもしない
+        Log::relay("PRIVMSG " + client.nick() + " -> " + channel->name() + " " +
+                   bytes(line) + " to " +
+                   StringUtil::toString(
+                       static_cast<long>(channel->memberCount() - 1)) +
+                   " member(s)");
     }
 }
 
@@ -57,8 +57,8 @@ void sendToUser(Server& server, Client& client, const std::string& target,
     }
     server.sendLine(*user, line);
     if (Log::traceEnabled()) {
-        Log::relay("PRIVMSG " + client.nick() + " -> " + user->nick() + " "
-                   + bytes(line));
+        Log::relay("PRIVMSG " + client.nick() + " -> " + user->nick() + " " +
+                   bytes(line));
     }
 }
 
