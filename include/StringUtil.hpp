@@ -7,8 +7,7 @@
 class StringUtil
 {
 public:
-	static std::string              toUpper(const std::string& s);
-	static std::string              toLower(const std::string& s);
+	static std::string              ircCaseFold(const std::string& s);
 	static std::string              trim(const std::string& s);
 	static std::vector<std::string> split(const std::string& s, char delim);
 	static std::string              toString(long value);
