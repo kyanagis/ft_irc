@@ -25,6 +25,7 @@
 #include "Privmsg.hpp"
 #include "Notice.hpp"
 #include "Invite.hpp"
+#include "Who.hpp"
 
 namespace {
 	// IRC_TRACE=1 用の1行表記．PASS の引数はログに残さない
@@ -58,6 +59,7 @@ CommandDispatcher::CommandDispatcher() {
 		registerCommand("NOTICE", new NoticeCommand());
 		registerCommand("PRIVMSG", new PrivmsgCommand());
 		registerCommand("INVITE", new InviteCommand());
+		registerCommand("WHO", new WhoCommand());
 	}
 	catch (...) {
 		// 構築途中はデストラクタが呼ばれないため、登録済み分を明示解放する。

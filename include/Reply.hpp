@@ -11,6 +11,8 @@ public:
 	static const int RPL_CREATED          = 3;
 	static const int RPL_MYINFO           = 4;
 	static const int RPL_CHANNELMODEIS    = 324;
+	static const int RPL_ENDOFWHO         = 315;
+	static const int RPL_WHOREPLY         = 352;
 	static const int RPL_NOTOPIC          = 331;
 	static const int RPL_TOPIC            = 332;
 	static const int RPL_INVITING         = 341;

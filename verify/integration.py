@@ -182,15 +182,27 @@ def test_no_crash(port):
 
 def test_rfc_framing(port):
     # RFC 2812 §2.3: bare LFはメッセージ終端ではなくprotocol error。
+    # 無言で落とすと素の nc で試した時に原因が分からないので、ERROR を返してから閉じる。
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(b"FOO\n")
     s.settimeout(2)
+    data = b""
+    closed = False
     try:
-        closed = s.recv(4096) == b""
+        while True:
+            chunk = s.recv(4096)
+            if chunk == b"":
+                closed = True
+                break
+            data += chunk
     except OSError:
         closed = True
     s.close()
-    check("RFC framing rejects bare LF", closed)
+    check(
+        "RFC framing rejects bare LF (ERROR then close)",
+        closed and data.startswith(b"ERROR :"),
+        repr(data),
+    )
 
     # 行頭空白を持つ不正メッセージは実行せず、次の整形式行は通常処理する。
     s = socket.create_connection((HOST, port), timeout=2)
