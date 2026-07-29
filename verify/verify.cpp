@@ -16,7 +16,7 @@
 //     - numeric() をコード0..999全数×target/rest代表で独立実装と一致
 //     - RFC形式ゴールデンベクタ / from() / 数値定数が定義域[1,999]
 //   [StringUtil]  ../src/StringUtil.cpp
-//     - toUpper/toLower/trim/split/toString の代表・境界ケース
+//     - ircCaseFold/trim/split/toString の代表・境界ケース
 //   [Client]  ../src/Client.cpp
 //     - extractLine: CR-LF/LF/空行/部分受信/埋め込みCR の行再構築（N14の核）
 //     - 登録ステートマシン(pass/nick/user/registered)・prefix()・送受信バッファ・overflow
@@ -526,10 +526,10 @@ static void runReply() {
 
 // ------------------------------------------------- StringUtil ユニット検査
 
-// - toUpper/toLower/trim/split/toString の代表・境界（split は空要素/区切り無しも）
+// - ircCaseFold/trim/split/toString の代表・境界（split は空要素/区切り無しも）
 static void runStringUtil() {
-	checkEq(StringUtil::toUpper("aB c:1"), "AB C:1", "toUpper");
-	checkEq(StringUtil::toLower("aB C:1"), "ab c:1", "toLower");
+	// casemapping (RFC 2812 §2.2 / RFC 2811 §2.2): A-Z 小文字化 + {}|^ -> []\~
+	checkEq(StringUtil::ircCaseFold("aB{}|^C:1"), "ab[]\\~c:1", "ircCaseFold");
 
 	checkEq(StringUtil::trim("  x y  "), "x y", "trim both");
 	checkEq(StringUtil::trim("noedge"), "noedge", "trim none");

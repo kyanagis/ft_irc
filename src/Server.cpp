@@ -31,26 +31,6 @@ namespace {
 	const std::size_t MAX_READ_BYTES_PER_EVENT = 64UL * 1024;
 	const int MAX_RECV_PER_EVENT = 16;
 
-	// RFC 2812 §2.2 のcasemapping。ASCII英字に加え、{}|^ は []\~ と
-	// それぞれ同一視する。チャンネル鍵の比較には使用しない。
-	std::string ircCaseFold(const std::string& s) {
-		std::string r(s);
-		for (std::string::size_type i = 0; i < r.size(); ++i) {
-			if (r[i] >= 'A' && r[i] <= 'Z') {
-				r[i] = static_cast<char>(r[i] - 'A' + 'a');
-			} else if (r[i] == '{') {
-				r[i] = '[';
-			} else if (r[i] == '}') {
-				r[i] = ']';
-			} else if (r[i] == '|') {
-				r[i] = '\\';
-			} else if (r[i] == '^') {
-				r[i] = '~';
-			}
-		}
-		return r;
-	}
-
 	// ログ用の稼働時間表記（1h2m3s / 2m3s / 3s）
 	std::string formatDuration(std::time_t sec) {
 		if (sec < 0) {
@@ -128,11 +108,11 @@ Server::~Server() {
 }
 
 Client* Server::findClientByNick(const std::string& nick) {
-	std::string key = ircCaseFold(nick);
+	std::string key = StringUtil::ircCaseFold(nick);
 	for (std::map<int, Client*>::iterator it = _clients.begin();
 			it != _clients.end(); ++it) {
 		if (it->second->hasNick()
-				&& ircCaseFold(it->second->nick()) == key) {
+				&& StringUtil::ircCaseFold(it->second->nick()) == key) {
 			return it->second;
 		}
 	}
@@ -141,7 +121,7 @@ Client* Server::findClientByNick(const std::string& nick) {
 
 Channel* Server::findChannel(const std::string& name) {
 	std::map<std::string, Channel*>::iterator it =
-			_channels.find(ircCaseFold(name));
+			_channels.find(StringUtil::ircCaseFold(name));
 	if (it == _channels.end()) {
 		return 0;
 	}
@@ -149,7 +129,7 @@ Channel* Server::findChannel(const std::string& name) {
 }
 
 Channel* Server::getOrCreateChannel(const std::string& name, Client& creator) {
-	std::string key = ircCaseFold(name);
+	std::string key = StringUtil::ircCaseFold(name);
 	std::map<std::string, Channel*>::iterator it = _channels.find(key);
 	if (it != _channels.end()) {
 		return it->second;
@@ -180,7 +160,7 @@ void Server::removeEmptyChannel(Channel* channel) {
 		return;
 	}
 	const std::string name = channel->name();   // delete後に使うのでコピー
-	_channels.erase(ircCaseFold(name));
+	_channels.erase(StringUtil::ircCaseFold(name));
 	delete channel;
 	Log::chan("# " + name + " destroyed, last member left (channels: "
 			+ StringUtil::toString(static_cast<long>(_channels.size())) + ")");
