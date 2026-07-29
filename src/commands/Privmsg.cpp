@@ -83,8 +83,11 @@ void PrivmsgCommand::execute(Server& server, Client& client,
         if (target.empty()) {
             continue;
         }
-        const std::string upperTarget = StringUtil::toUpper(target);
-        if (!uniqueTargets.insert(upperTarget).second) {
+        // 宛先解決(findChannel/findClientByNick)と同じ casemapping で畳んで
+        // 重複判定する。単純なASCII大文字化では {}|^ を畳まず、#a{ と #a[ の
+        // ように ircCaseFold 上は同一に解決される宛先を別物と誤判定し二重配送になる。
+        const std::string foldedTarget = StringUtil::ircCaseFold(target);
+        if (!uniqueTargets.insert(foldedTarget).second) {
             server.sendLine(
                 client,
                 Reply::numeric(
