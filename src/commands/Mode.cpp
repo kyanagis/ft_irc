@@ -125,12 +125,15 @@ namespace {
 		bool           argOnUnset;   // -flag が1引数を取るか
 	};
 
-	// モード消費規則の唯一の真実源(i,t=引数なし / k=+-両引数 / l=+のみ引数 / o=+-両引数)
+	// モード消費規則の唯一の真実源(i,t=引数なし / k,l=+のみ引数 / o=+-両引数)
+	// -k は引数を取らない: irssi の /mode #c -k は引数なしで送られ、461 を返すと
+	// 鍵が外せなくなる(subject 必須の「k: Set/remove the channel key」)。
+	// 解除の通知には applyOne が解除前の実鍵を echo する。
 	static const ModeSpec kModeTable[] = {
 		// validate        badArgDetail            badArgReply                flag argOnSet argOnUnset
 		{ 0,              0,                      0,                         'i', false,   false },
 		{ 0,              0,                      0,                         't', false,   false },
-		{ &validateKey,   ":Invalid channel key", Reply::ERR_NEEDMOREPARAMS, 'k', true,    true  },
+		{ &validateKey,   ":Invalid channel key", Reply::ERR_NEEDMOREPARAMS, 'k', true,    false },
 		{ &validateLimit, 0,                      0,                         'l', true,    false }, // badArgReply=0 → 値不正は無音スキップ
 		{ 0,              0,                      0,                         'o', true,    true  },
 	};
