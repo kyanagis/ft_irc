@@ -353,6 +353,14 @@ void ModeCommand::execute(Server& server, Client& client, const Message& msg) {
 				channel->name() + " " + channel->modeString(client));
 		return;
 	}
+	// RFC2812 §3.2.3: 引数なしの +b はバンリストの「照会」なので非opにも許す。
+	// irssi は join 直後に MODE <chan> b を自動送出するので、482 を返すと
+	// チャンネル窓にエラーが出る。+b は未実装なので常に空リストを返す。
+	if (msg.size() == 2 && (msg.param(1) == "b" || msg.param(1) == "+b")) {
+		sendNumeric(server, client, Reply::RPL_ENDOFBANLIST,
+				channel->name() + " :End of channel ban list");
+		return;
+	}
 	if (channel->isOperator(client) == false) {
 		throw IrcException(Reply::ERR_CHANOPRIVSNEEDED, client.nick(),
 				channel->name() + " :You're not channel operator");
