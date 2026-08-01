@@ -489,8 +489,12 @@ void Server::handleReadable(int fd) {
 		return;
 	}
 
+	// CRLF違反と同じ §2.3 違反なので扱いも揃える: 理由を ERROR で伝えてから閉じる。
+	// 無言で落とすとクライアント側に原因が残らない。
 	if (current.inputOverflow()) {
-		disconnect(current, "input line too long");
+		gracefulClose(current,
+				"input line too long "
+				"(RFC 2812: messages must be <=512 octets including CR-LF)");
 		return;
 	}
 	if (current.outputOverflow()) {
