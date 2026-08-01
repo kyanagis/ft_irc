@@ -52,6 +52,3 @@ verify/slow-unit-*
 
 # direnv のローカルキャッシュ
 .direnv/
-
-# ファザーのコーパス（生成物・提出物ではない）
-verify/corpus/

@@ -526,10 +526,16 @@ static void runReply() {
 
 // ------------------------------------------------- StringUtil ユニット検査
 
-// - ircCaseFold/split/toString の代表・境界（split は空要素/区切り無しも）
+// - ircCaseFold/trim/split/toString の代表・境界（split は空要素/区切り無しも）
 static void runStringUtil() {
 	// casemapping (RFC 2812 §2.2 / RFC 2811 §2.2): A-Z 小文字化 + {}|^ -> []\~
 	checkEq(StringUtil::ircCaseFold("aB{}|^C:1"), "ab[]\\~c:1", "ircCaseFold");
+
+	checkEq(StringUtil::trim("  x y  "), "x y", "trim both");
+	checkEq(StringUtil::trim("noedge"), "noedge", "trim none");
+	checkEq(StringUtil::trim("   "), "", "trim all-space");
+	checkEq(StringUtil::trim("\t\r\n x \n"), "x", "trim mixed ws");
+	checkEq(StringUtil::trim("\f\v x \v\f"), "x", "trim form-feed/vtab ws");  // \f \v 分岐を網羅
 
 	std::vector<std::string> v = StringUtil::split("a,b,c", ',');
 	expect("split count 3", v.size() == 3);

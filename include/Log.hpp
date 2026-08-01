@@ -1,28 +1,15 @@
 #ifndef LOG_HPP
 #define LOG_HPP
 
-#include <cstddef>
 #include <string>
 
 class Client;
 
-// サーバ側のターミナル出力（IRCプロトコルとは無関係）．
+// サーバ側のターミナル出力（IRCプロトコルとは無関係・stdoutへ1行ずつflush）．
 // 環境変数: NO_COLOR / TERM=dumb で色を落とす．IRC_TRACE=1 で受理コマンドの生トレースも出す．
-//
-// 出力は直接書かずキューへ積み，Server が poll(2) の POLLOUT を見て drainOnce()
-// で吐き出す（要件 N11: poll を通さない fd への write を行わない）．stdout が
-// パイプや端末で読み手が止まると write が無期限ブロックし，イベントループごと
-// 停止するため（端末の Ctrl+S でも起きる）．
 class Log
 {
 public:
-	// 起動時に1回．キュー容量を先に確保して OOM 経路で再確保しないようにする
-	static void        reserve();
-	static bool        hasPending();
-	// POLLOUT が立った時に1チャンクだけ書く．戻り値は書けたbyte数
-	static std::size_t drainOnce();
-	static unsigned long droppedLines();
-
 	// 起動バナー: アスキーアート＋見出し．field/rule で情報パネルを続けて書く
 	static void banner(const std::string& serverName, const std::string& version);
 	static void field(const std::string& key, const std::string& value);

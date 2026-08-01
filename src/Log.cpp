@@ -39,47 +39,6 @@ namespace {
 	const std::size_t KEY_WIDTH = 10;
 	const std::size_t TAG_WIDTH = 5;
 
-	// 出力キュー．stdout へ直接書くと読み手が止まった時にブロックするので，
-	// ここへ積んで poll(2) の POLLOUT でだけ吐く．
-	const std::size_t LOG_QUEUE_CAP = 256UL * 1024;   // 超過分の行は捨てる
-	// POLLOUT 直後に PIPE_BUF(POSIX最小512) 以下を書く限りブロックしない．
-	// 端末の低水位マークも通常これ以上あるので1回の書き出しはこの粒度に刻む．
-	const std::size_t LOG_CHUNK = 512;
-
-	std::string& queue() {
-		static std::string q;
-		return q;
-	}
-
-	unsigned long& dropped() {
-		static unsigned long n = 0;
-		return n;
-	}
-
-	// 容量内なら再確保しない．溢れたら行ごと捨てて dropped を数える
-	void push(const std::string& line) {
-		std::string& q = queue();
-		if (q.size() + line.size() > LOG_QUEUE_CAP) {
-			++dropped();
-			return;
-		}
-		q += line;
-	}
-
-	// OOM 経路用．std::string を作らず，容量内に収まる時だけ追記する
-	void pushRaw(const char* s) {
-		if (s == 0) {
-			return;
-		}
-		std::string& q = queue();
-		std::size_t len = std::strlen(s);
-		if (q.size() + len > q.capacity()) {
-			++dropped();
-			return;
-		}
-		q.append(s, len);
-	}
-
 	bool envOn(const char* name) {
 		const char* v = std::getenv(name);
 		return v != 0 && v[0] != '\0' && !(v[0] == '0' && v[1] == '\0');
@@ -143,90 +102,56 @@ namespace {
 	}
 
 	void emit(const char* tag, const char* color, const std::string& text) {
-		push(paint(DIM, "[" + stamp() + "]") + " "
-				+ paint(color, pad(tag, TAG_WIDTH)) + "  " + sanitize(text)
-				+ "\n");
+		std::cout << paint(DIM, "[" + stamp() + "]") << " "
+				<< paint(color, pad(tag, TAG_WIDTH)) << "  " << sanitize(text)
+				<< std::endl;
 	}
 
-	// 動的確保をしない emit。std::string を一切作らず、確保済み容量へ直接追記する。
-	// OOM ハンドラから呼ばれるので paint()/pad()/sanitize()/push() は使えない
+	// 動的確保をしない emit。std::string を一切作らず、色も逐次 << で出す。
+	// OOM ハンドラから呼ばれるので paint()/pad()/sanitize() は使えない
 	void emitNoAlloc(const char* tag, const char* color, const char* a,
 			const char* b, const char* c) {
 		char ts[16];
 		stampInto(ts, sizeof(ts));
 		const bool col = colorOn();
 		if (col) {
-			pushRaw(DIM);
+			std::cout << DIM;
 		}
-		pushRaw("[");
-		pushRaw(ts);
-		pushRaw("]");
+		std::cout << "[" << ts << "]";
 		if (col) {
-			pushRaw(RESET);
-			pushRaw(" ");
-			pushRaw(color);
+			std::cout << RESET << " " << color;
 		} else {
-			pushRaw(" ");
+			std::cout << " ";
 		}
-		pushRaw(tag);
+		std::cout << tag;
 		if (col) {
-			pushRaw(RESET);
+			std::cout << RESET;
 		}
-		pushRaw("   ! ");
-		pushRaw(a);
+		std::cout << "   ! " << a;
 		if (b != 0) {
-			pushRaw(" ");
-			pushRaw(b);
+			std::cout << " " << b;
 		}
 		if (c != 0) {
-			pushRaw(": ");
-			pushRaw(c);
+			std::cout << ": " << c;
 		}
-		pushRaw("\n");
+		std::cout << "\n";
+		std::cout.flush();
 	}
-}
-
-void Log::reserve() {
-	queue().reserve(LOG_QUEUE_CAP);
-}
-
-bool Log::hasPending() {
-	return !queue().empty();
-}
-
-unsigned long Log::droppedLines() {
-	return dropped();
-}
-
-// POLLOUT が立った時だけ呼ぶ．1回に LOG_CHUNK までしか書かないのでブロックしない．
-std::size_t Log::drainOnce() {
-	std::string& q = queue();
-	if (q.empty()) {
-		return 0;
-	}
-	const std::size_t n = q.size() < LOG_CHUNK ? q.size() : LOG_CHUNK;
-	std::cout.write(q.data(), static_cast<std::streamsize>(n));
-	std::cout.flush();
-	if (!std::cout.good()) {
-		// 書けなかった分は捨てて進む（ログのために本業を止めない）
-		std::cout.clear();
-	}
-	q.erase(0, n);
-	return n;
 }
 
 void Log::banner(const std::string& serverName, const std::string& version) {
-	push("\n");
+	std::cout << std::endl;
 	for (std::size_t i = 0; i < ART_ROWS; ++i) {
-		push(" " + paint(ART_COLOR[i], ART[i]) + "\n");
+		std::cout << " " << paint(ART_COLOR[i], ART[i]) << std::endl;
 	}
-	push("  " + paint(BOLD, serverName + " " + version)
-			+ paint(DIM, "  C++98 / single-process poll(2) event loop") + "\n");
+	std::cout << "  " << paint(BOLD, serverName + " " + version)
+			<< paint(DIM, "  C++98 / single-process poll(2) event loop")
+			<< std::endl;
 	rule();
 }
 
 void Log::field(const std::string& key, const std::string& value) {
-	push("  " + paint(GRAY, pad(key, KEY_WIDTH)) + value + "\n");
+	std::cout << "  " << paint(GRAY, pad(key, KEY_WIDTH)) << value << std::endl;
 }
 
 void Log::rule() {
@@ -234,7 +159,7 @@ void Log::rule() {
 	for (std::size_t i = 0; i < PANEL_WIDTH; ++i) {
 		line += "─";
 	}
-	push(" " + paint(DIM, line) + "\n");
+	std::cout << " " << paint(DIM, line) << std::endl;
 }
 
 void Log::info(const std::string& text) {
