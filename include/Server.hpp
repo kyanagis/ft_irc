@@ -29,7 +29,6 @@ public:
 	void     removeEmptyChannel(Channel* channel);
 	void     disconnect(Client& client, const std::string& reason);
 	void     gracefulClose(Client& client, const std::string& reason);
-	void     queueMessage(Client& client, const std::string& message);
 	void     sendLine(Client& client, const std::string& line);
 
 	// PASS/NICK/USER が各自の処理後に呼ぶ。4条件が揃うまでは no-op。

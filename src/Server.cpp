@@ -571,11 +571,7 @@ void Server::pumpLines(int fd) {
 	}
 }
 
-void Server::queueMessage(Client& client, const std::string& message) {
-	client.appendOutput(message);
-}
-
-// 1行をCRLF終端で送信キューへ積む。コマンドはこちらを使う（queueMessageは生バイト用）
+// 1行をCRLF終端で送信キューへ積む。コマンドからの送信は必ずこれを通す
 void Server::sendLine(Client& client, const std::string& line) {
 	std::string queued = StringUtil::capLine(line) + IRC_CRLF;
 	client.appendOutput(queued);
