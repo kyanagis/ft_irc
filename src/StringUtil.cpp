@@ -2,14 +2,6 @@
 
 #include <sstream>
 
-namespace {
-	// ロケール非依存でASCII空白のみを空白扱いにする（C++98・isspace()のUB回避）
-	bool isAsciiSpace(char c) {
-		return c == ' ' || c == '\t' || c == '\r'
-				|| c == '\n' || c == '\f' || c == '\v';
-	}
-}
-
 // RFC 2812 §2.2 / RFC 2811 §2.2 の casemapping。ASCII英字に加え、{}|^ は
 // []\~ とそれぞれ同一視する。nick/channel の同一性判定に使う（チャンネル鍵の
 // 比較には使用しない）。宛先解決と重複判定はいずれも本関数を通すこと。
@@ -29,19 +21,6 @@ std::string StringUtil::ircCaseFold(const std::string& s) {
 		}
 	}
 	return r;
-}
-
-std::string StringUtil::trim(const std::string& s) {
-	std::string::size_type begin = 0;
-	std::string::size_type end = s.size();
-
-	while (begin < end && isAsciiSpace(s[begin])) {
-		++begin;
-	}
-	while (end > begin && isAsciiSpace(s[end - 1])) {
-		--end;
-	}
-	return s.substr(begin, end - begin);
 }
 
 std::vector<std::string> StringUtil::split(const std::string& s, char delim) {
