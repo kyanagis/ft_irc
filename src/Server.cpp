@@ -28,8 +28,7 @@ namespace {
 	const std::time_t REG_TIMEOUT_SEC = 60;  // connectからこの秒数で登録未完なら切断
 	const std::time_t CLOSE_TIMEOUT_SEC = 10;  // 猶予切断のflushがこの秒数で終わらなければ強制finalize
 	const int MAX_ACCEPT = 16;
-	const std::size_t MAX_READ_BYTES_PER_EVENT = 64UL * 1024;
-	const int MAX_RECV_PER_EVENT = 16;
+	const std::time_t LOG_DRAIN_SEC = 2;    // 終了時に残ログを吐くのに使う上限秒数
 
 	// ログ用の稼働時間表記（1h2m3s / 2m3s / 3s）
 	std::string formatDuration(std::time_t sec) {
@@ -214,6 +213,12 @@ void Server::logShutdown() const {
 			+ " (peak " + StringUtil::toString(static_cast<long>(_peakClients))
 			+ " at once)  open channels "
 			+ StringUtil::toString(static_cast<long>(_channels.size())));
+	// 読み手が詰まってキューが溢れた分は捨てている。黙って消すと欠落に気付けない
+	if (Log::droppedLines() > 0) {
+		Log::warn("dropped " + StringUtil::toString(
+				static_cast<long>(Log::droppedLines()))
+				+ " log line(s): stdout could not keep up");
+	}
 	Log::info("closing " + StringUtil::toString(
 			static_cast<long>(_clients.size())) + " client socket(s), bye");
 }
@@ -226,6 +231,16 @@ void Server::rebuildPollFds() {
 	listenPfd.events = POLLIN;
 	listenPfd.revents = 0;
 	_pollfds.push_back(listenPfd);
+
+	// stdout も同じpollで扱う（要件 N11）．直接writeするとパイプ/端末の読み手が
+	// 止まった時にブロックし，イベントループごと停止するため．積まれた時だけ監視する
+	if (Log::hasPending()) {
+		struct pollfd logPfd;
+		logPfd.fd = STDOUT_FILENO;
+		logPfd.events = POLLOUT;
+		logPfd.revents = 0;
+		_pollfds.push_back(logPfd);
+	}
 
 	for (std::map<int, Client*>::iterator it = _clients.begin();
 			it != _clients.end(); ++it) {
@@ -291,6 +306,7 @@ void Server::sweepClients() {
 
 void Server::run() {
 	setup();
+	Log::reserve();   // ログキューの容量を先に取る（OOM経路で再確保しないため）
 	_running = 1;
 
 	std::signal(SIGINT, Server::requestStop);
@@ -299,7 +315,21 @@ void Server::run() {
 
 	logStartup();
 
-	while (_running) {
+	// 停止要求後も残ログを吐き切るまで同じループを回す（別pollを持たないため）。
+	// 読み手が止まっていると吐き切れないので LOG_DRAIN_SEC で打ち切る。
+	bool stopping = false;
+	std::time_t drainDeadline = 0;
+
+	while (true) {
+		if (!_running && !stopping) {
+			logShutdown();
+			stopping = true;
+			drainDeadline = std::time(0) + LOG_DRAIN_SEC;
+		}
+		if (stopping
+				&& (!Log::hasPending() || std::time(0) >= drainDeadline)) {
+			break;
+		}
 		// メモリ枯渇(bad_alloc)でプロセスを落とさない（subject: OOMでも予期せぬ終了は不可）。
 		// 1周分の割当(pollfd構築/accept/per-client/sweep)をまとめて守り，枯渇した周は捨てて
 		// 次周で再試行する。poll失敗のruntime_errorはbad_allocでないのでここは素通りし，
@@ -331,6 +361,14 @@ void Server::run() {
 					}
 					if (re & (POLLERR | POLLHUP | POLLNVAL)) {
 						throw std::runtime_error("listening socket poll error");
+					}
+					continue;
+				}
+
+				// stdout: 書ける時だけ1チャンク吐く。書けなくても本業は止めない
+				if (fd == STDOUT_FILENO) {
+					if (re & POLLOUT) {
+						Log::drainOnce();
 					}
 					continue;
 				}
@@ -390,8 +428,6 @@ void Server::run() {
 			continue;
 		}
 	}
-
-	logShutdown();
 }
 
 void Server::acceptClient() {
@@ -432,27 +468,14 @@ void Server::handleReadable(int fd) {
 	}
 	Client& client = *it->second;
 	char buf[READ_CHUNK];
-	ssize_t n = -1;
-	std::size_t bytesRead = 0;
-	int recvCount = 0;
-	int recvErrno = 0;
 
-	// 常に送信し続ける1クライアントが他fdをstarveさせないよう、pollイベント
-	// 1回あたりのrecv回数と総byte数を制限する。未読データは次周もPOLLINになる。
-	while (recvCount < MAX_RECV_PER_EVENT
-			&& bytesRead < MAX_READ_BYTES_PER_EVENT) {
-		std::size_t remaining = MAX_READ_BYTES_PER_EVENT - bytesRead;
-		std::size_t request = remaining < sizeof(buf) ? remaining : sizeof(buf);
-		n = recv(client.fd(), buf, request, 0);
-		++recvCount;
-		if (n <= 0) {
-			if (n < 0) {
-				recvErrno = errno;
-			}
-			break;
-		}
+	// POLLIN 1回につき recv も1回だけ（要件 N11: pollを通さないI/Oを行わない）。
+	// level-triggeredなので読み残しは次周も POLLIN になる。1回に制限することで
+	// 送り続ける1クライアントが他fdをstarveさせることも同時に防げる。
+	ssize_t n = recv(client.fd(), buf, sizeof(buf), 0);
+	int recvErrno = (n < 0) ? errno : 0;
+	if (n > 0) {
 		client.appendInput(buf, static_cast<std::size_t>(n));
-		bytesRead += static_cast<std::size_t>(n);
 	}
 
 	pumpLines(fd);
@@ -466,8 +489,12 @@ void Server::handleReadable(int fd) {
 		return;
 	}
 
+	// CRLF違反と同じ §2.3 違反なので扱いも揃える: 理由を ERROR で伝えてから閉じる。
+	// 無言で落とすとクライアント側に原因が残らない。
 	if (current.inputOverflow()) {
-		disconnect(current, "input line too long");
+		gracefulClose(current,
+				"input line too long "
+				"(RFC 2812: messages must be <=512 octets including CR-LF)");
 		return;
 	}
 	if (current.outputOverflow()) {
@@ -520,7 +547,11 @@ void Server::pumpLines(int fd) {
 			return;
 		}
 		if (client.inputProtocolError()) {
-			disconnect(client, "invalid message format or line too long");
+			// RFC 2812 §2.3 違反（CRLF終端でない・512超・NUL/CR混入）。
+			// 無言で落とすと原因が分からないので ERROR を返してから閉じる
+			gracefulClose(client,
+					"invalid message format or line too long "
+					"(RFC 2812: messages must be CR-LF terminated, <=512 octets)");
 			return;
 		}
 		Message msg = Message::parse(line);
@@ -540,11 +571,7 @@ void Server::pumpLines(int fd) {
 	}
 }
 
-void Server::queueMessage(Client& client, const std::string& message) {
-	client.appendOutput(message);
-}
-
-// 1行をCRLF終端で送信キューへ積む。コマンドはこちらを使う（queueMessageは生バイト用）
+// 1行をCRLF終端で送信キューへ積む。コマンドからの送信は必ずこれを通す
 void Server::sendLine(Client& client, const std::string& line) {
 	std::string queued = StringUtil::capLine(line) + IRC_CRLF;
 	client.appendOutput(queued);

@@ -125,12 +125,15 @@ namespace {
 		bool           argOnUnset;   // -flag が1引数を取るか
 	};
 
-	// モード消費規則の唯一の真実源(i,t=引数なし / k=+-両引数 / l=+のみ引数 / o=+-両引数)
+	// モード消費規則の唯一の真実源(i,t=引数なし / k,l=+のみ引数 / o=+-両引数)
+	// -k は引数を取らない: irssi の /mode #c -k は引数なしで送られ、461 を返すと
+	// 鍵が外せなくなる(subject 必須の「k: Set/remove the channel key」)。
+	// 解除の通知には applyOne が解除前の実鍵を echo する。
 	static const ModeSpec kModeTable[] = {
 		// validate        badArgDetail            badArgReply                flag argOnSet argOnUnset
 		{ 0,              0,                      0,                         'i', false,   false },
 		{ 0,              0,                      0,                         't', false,   false },
-		{ &validateKey,   ":Invalid channel key", Reply::ERR_NEEDMOREPARAMS, 'k', true,    true  },
+		{ &validateKey,   ":Invalid channel key", Reply::ERR_NEEDMOREPARAMS, 'k', true,    false },
 		{ &validateLimit, 0,                      0,                         'l', true,    false }, // badArgReply=0 → 値不正は無音スキップ
 		{ 0,              0,                      0,                         'o', true,    true  },
 	};
@@ -348,6 +351,14 @@ void ModeCommand::execute(Server& server, Client& client, const Message& msg) {
 	if (msg.size() < 2) {
 		sendNumeric(server, client, Reply::RPL_CHANNELMODEIS,
 				channel->name() + " " + channel->modeString(client));
+		return;
+	}
+	// RFC2812 §3.2.3: 引数なしの +b はバンリストの「照会」なので非opにも許す。
+	// irssi は join 直後に MODE <chan> b を自動送出するので、482 を返すと
+	// チャンネル窓にエラーが出る。+b は未実装なので常に空リストを返す。
+	if (msg.size() == 2 && (msg.param(1) == "b" || msg.param(1) == "+b")) {
+		sendNumeric(server, client, Reply::RPL_ENDOFBANLIST,
+				channel->name() + " :End of channel ban list");
 		return;
 	}
 	if (channel->isOperator(client) == false) {
