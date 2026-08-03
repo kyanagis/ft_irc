@@ -6,7 +6,6 @@ namespace {
 	std::string toUpperAscii(const std::string& s) {
 		std::string result(s);
 		for (std::string::size_type i = 0; i < result.size(); ++i) {
-			// isCommand()通過後なので、'Z'より大きい文字は小文字だけ。
 			if (result[i] > 'Z') {
 				result[i] = static_cast<char>(result[i] - 'a' + 'A');
 			}
@@ -103,8 +102,6 @@ Message Message::parse(const std::string& line) {
 		}
 		msg._params.push_back(line.substr(pos, end - pos));
 
-		// RFC 2812 §2.3.1: 最大14個のmiddleと、任意で1個のtrailing。
-		// 15番目は':'を省略でき、その場合は残り全体がtrailingになる。
 		if (msg._params.size() == 14) {
 			pos = end + 1;
 			if (pos >= line.size() || line[pos] == ' ') {

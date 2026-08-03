@@ -2,7 +2,7 @@
 
 namespace {
 	const std::size_t MAX_INPUT_LINE = 512;
-	const std::size_t MAX_OUTPUT_QUEUE = 1024UL * 1024;  // size_t で計算（暗黙拡大を回避）
+	const std::size_t MAX_OUTPUT_QUEUE = 1024UL * 1024;
 }
 
 Client::Client(int fd, const std::string& host)
@@ -108,8 +108,6 @@ bool Client::extractLine(std::string& out) {
 
 	std::string line = _inBuf.substr(0, pos);
 	_inBuf.erase(0, pos + 1);
-	// RFC 2812 §2.3/§2.3.1: 各メッセージはCRLF終端で、終端を含めて
-	// 512 octets以内。bare LFや埋め込みNUL/CRは実行せず接続を閉じる。
 	if (pos + 1 > MAX_INPUT_LINE
 			|| line.empty() || line[line.size() - 1] != '\r') {
 		_inputProtocolError = true;

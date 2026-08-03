@@ -1,23 +1,15 @@
 name: CI
 
-# dev / main への PR（と main への push）で発火するゲート。
-# 「-Werror でビルド green」＋「パーサ/Reply の property test を ASan/UBSan 下で実行」
-# ＋実サーバ(ASan/UBSan版)の結合スモーク(N14/N8)＋全コマンド E2E 未実装はskio
-# ＋純ロジック全ファイルの region+line+branch=100% ＋ パーサ全数 totality ゲート
-# ＋静的解析ゲートを機械検査する
-
 on:
   pull_request:
-    branches: [dev, main]   # dev だけでなく dev→main も必ずゲートする
+    branches: [dev, main]
   push:
-    branches: [main]        # main を壊すマージ/直 push を検知
-  workflow_dispatch: {}     # 手動再実行
+    branches: [main]
+  workflow_dispatch: {}
 
-# 既定は最小権限（読み取りのみ）。トークン漏洩時の被害を最小化する
 permissions:
   contents: read
 
-# 同一 ref で新しい push が来たら古い実行はキャンセル
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -30,7 +22,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 42 の評価は c++(=g++)。clang++ も回して macOS 開発環境との移植性差を先に潰す
         cxx: [g++, clang++]
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +41,6 @@ jobs:
       - name: Build verify harness (ASan + UBSan)
         run: make -C verify verify
       - name: Run all checks (Message/Reply property + StringUtil/Client/Channel/IrcException units)
-        # UBSan は -fno-sanitize-recover=all でビルド済み。env は stacktrace 目的
         env:
           UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
           ASAN_OPTIONS: abort_on_error=1
@@ -69,7 +59,6 @@ jobs:
       - name: Build fuzz target (fuzzer+ASan+UBSan)
         run: make -C verify fuzz
       - name: Fuzz byte-facing code (time-boxed, crash => fail)
-        # UBSan は halt するようビルド済み。crash 再現物は verify/ に落として回収する
         env:
           UBSAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1
           ASAN_OPTIONS: abort_on_error=1
@@ -96,15 +85,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build sanitized server (ASan + UBSan)
-        # verify/ で別バイナリ ircserv_asan を作る。
-        # poll/socket/状態遷移の I/O 層まで含めた実サーバをサニタイザ下で回せる。
         run: make -C verify ircserv_asan
       - name: Smoke + per-command E2E under ASan/UBSan
-        # 未実装コマンドは integration.py 内の 421 probe で自動 skip。
-        # IRC_TEST_REGISTRATION=1 で登録フロー＋登録系エラーの回帰ガードも有効化。
-        # 動作中の heap-overflow / use-after-free / UB はサニタイザが即 abort させ赤にする。
-        # detect_leaks=1: サーバは SIGTERM で run() を抜け main を正常 return するので、
-        # 終了時に LSan が走り leak を検出する（integration.py が clean-exit rc!=0 を赤にする）。
         env:
           IRCSERV_BIN: verify/ircserv_asan
           IRC_TEST_REGISTRATION: "1"
@@ -130,9 +112,6 @@ jobs:
       - name: Build coverage-instrumented server
         run: make -C verify ircserv_cov
       - name: Run integration to exercise the server, then report coverage
-        # integration が SIGTERM でサーバをクリーン終了させ profraw を書き出す。
-        # コマンド/IO層の到達度を可視化する（ゲートはしない＝未実装や到達困難な error 経路を
-        # 100% 強制しない。integration 自体が失敗すればこのジョブも失敗する）。
         env:
           IRCSERV_BIN: verify/ircserv_cov
           IRC_TEST_REGISTRATION: "1"
@@ -180,8 +159,6 @@ jobs:
           python3 coverage_gate.py cov.json
       - name: Gate 2 — パーサ全数テスト＋RFC境界テストで Message.cpp を 100% 網羅
         working-directory: verify
-        # 長さ<=12の全数差分に加え、3桁command、14 middle + trailing、
-        # 不正区切りなど長さ依存のRFC境界を専用ベクタで実行する。
         run: |
           set -euo pipefail
           LLVM_PROFILE_FILE=ex.profraw ./verify_cov exhaustive 12 >/dev/null
@@ -213,8 +190,6 @@ jobs:
             --error-exitcode=2 --std=c++03 --language=c++ \
             --inline-suppr --quiet -I include src
       - name: clang-tidy (clang static analyzer + bugprone, WarningsAsErrors)
-        # 設定は .clang-tidy。
-        # WarningsAsErrors='*' により選定チェックの指摘が 1 件でも非ゼロ終了で赤にする。
         run: |
           clang-tidy $(find src -name '*.cpp' | sort) \
             -- -std=c++98 -I include -I include/commands

@@ -31,7 +31,6 @@ public:
 	void     gracefulClose(Client& client, const std::string& reason);
 	void     sendLine(Client& client, const std::string& line);
 
-	// PASS/NICK/USER が各自の処理後に呼ぶ。4条件が揃うまでは no-op。
 	void     completeRegistration(Client& client);
 
 	const std::string& password() const;
@@ -63,8 +62,8 @@ private:
 	std::string                     _serverName;
 	std::string                     _createdAt;
 	std::time_t                     _startedAt;
-	unsigned long                   _totalConnections;   // 累計accept数（ログ用）
-	std::size_t                     _peakClients;        // 同時接続の最大（ログ用）
+	unsigned long                   _totalConnections;
+	std::size_t                     _peakClients;
 	std::map<int, Client*>          _clients;
 	std::map<std::string, Channel*> _channels;
 	std::vector<struct pollfd>      _pollfds;

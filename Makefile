@@ -29,7 +29,6 @@ fclean: clean
 
 re: fclean all
 
-# ヘッダ変更時のみ該当 .o を再ビルド（不要な再リンクを避ける：要件 N5）
 -include $(DEPS)
 
 .PHONY: all clean fclean re

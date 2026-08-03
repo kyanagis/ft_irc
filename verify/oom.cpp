@@ -1,6 +1,3 @@
-// Server/CommandDispatcherの構築中に各newを順番に失敗させ、C++例外巻き戻し後に
-// テスト中の生存allocationが残らないことを決定的に検査する。
-
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>

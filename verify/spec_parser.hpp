@@ -1,9 +1,6 @@
 #ifndef SPEC_PARSER_HPP
 #define SPEC_PARSER_HPP
 
-// RFC 2812 §2.3.1 の message ABNFを、1文字ずつ走査する独立仕様として
-// 実装する。src/Message.cppとは制御構造を分け、差分検査に使用する。
-
 #include <string>
 #include <vector>
 

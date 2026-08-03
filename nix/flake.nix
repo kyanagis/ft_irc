@@ -17,7 +17,6 @@
         {
           default = pkgs.mkShell.override { stdenv = llvm.stdenv; } {
             packages = [
-              # IRCクライアント
               pkgs.irssi
               pkgs.weechat
 

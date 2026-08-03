@@ -25,8 +25,6 @@ namespace {
 		return c >= '0' && c <= '9';
 	}
 
-	// RFC 2812 §2.3.1: nickname = (letter/special) *8(letter/digit/special/"-")
-	// 先頭は letter か special、以降は letter/digit/special/"-"、最大9文字。
 	bool isValidNick(const std::string& n) {
 		if (n.empty() || n.size() > 9) {
 			return false;
@@ -43,8 +41,6 @@ namespace {
 		return true;
 	}
 
-	// 登録済みユーザの改名を、旧prefixのまま本人＋共有チャンネルの全メンバーへ
-	// 1回ずつ通知する。set で重複宛先（複数チャンネルを共有）をまとめる。
 	void notifyNickChange(Server& server, Client& client,
 			const std::string& newNick) {
 		const std::string line = Reply::from(client.prefix(), "NICK :" + newNick);
@@ -84,12 +80,10 @@ void NickCommand::execute(Server& server, Client& client, const Message& msg) {
 				nick + " :Erroneous nickname");
 	}
 
-	// 自分の今のnickをそのまま再送してきたら何もしない。
 	if (client.hasNick() && client.nick() == nick) {
 		return;
 	}
 
-	// findClientByNick は大文字小文字無視。自分以外が使っていたら 433。
 	Client* existing = server.findClientByNick(nick);
 	if (existing != 0 && existing != &client) {
 		throw IrcException(Reply::ERR_NICKNAMEINUSE, client.nick(),
@@ -97,7 +91,6 @@ void NickCommand::execute(Server& server, Client& client, const Message& msg) {
 	}
 
 	if (client.isRegistered()) {
-		// 通知は旧prefixを使うので setNick より前に流す。
 		notifyNickChange(server, client, nick);
 		Log::auth("* " + client.nick() + " is now known as " + nick);
 		client.setNick(nick);

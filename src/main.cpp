@@ -50,12 +50,9 @@ int main(int argc, char** argv) {
 		server.run();
 	}
 	catch (const std::bad_alloc&) {
-		// OOM中に追加割当や、poll外のwrite/sendを行わず静かに失敗する。
 		return 1;
 	}
 	catch (const std::exception& e) {
-		// ここは Log を使わない: catch 内で throw しうる関数を呼ぶと main から
-		// 例外が漏れうる（bugprone-exception-escape）．バナー前なので素の cerr で足りる
 		std::cerr << "Fatal: " << e.what() << '\n';
 		return 1;
 	}

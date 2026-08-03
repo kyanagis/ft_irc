@@ -21,7 +21,6 @@ namespace {
 	const char* const CYAN   = "\033[36m";
 	const char* const GRAY   = "\033[90m";
 
-	// ft_irc（ANSI Shadow体）．各行44カラム．行ごとに濃淡を変えてグラデーションにする
 	const char* const ART[] = {
 		"███████╗████████╗        ██╗██████╗  ██████╗",
 		"██╔════╝╚══██╔══╝        ██║██╔══██╗██╔════╝",
@@ -39,11 +38,7 @@ namespace {
 	const std::size_t KEY_WIDTH = 10;
 	const std::size_t TAG_WIDTH = 5;
 
-	// 出力キュー．stdout へ直接書くと読み手が止まった時にブロックするので，
-	// ここへ積んで poll(2) の POLLOUT でだけ吐く．
-	const std::size_t LOG_QUEUE_CAP = 256UL * 1024;   // 超過分の行は捨てる
-	// POLLOUT 直後に PIPE_BUF(POSIX最小512) 以下を書く限りブロックしない．
-	// 端末の低水位マークも通常これ以上あるので1回の書き出しはこの粒度に刻む．
+	const std::size_t LOG_QUEUE_CAP = 256UL * 1024;
 	const std::size_t LOG_CHUNK = 512;
 
 	std::string& queue() {
@@ -56,7 +51,6 @@ namespace {
 		return n;
 	}
 
-	// 容量内なら再確保しない．溢れたら行ごと捨てて dropped を数える
 	void push(const std::string& line) {
 		std::string& q = queue();
 		if (q.size() + line.size() > LOG_QUEUE_CAP) {
@@ -66,7 +60,6 @@ namespace {
 		q += line;
 	}
 
-	// OOM 経路用．std::string を作らず，容量内に収まる時だけ追記する
 	void pushRaw(const char* s) {
 		if (s == 0) {
 			return;
@@ -85,7 +78,6 @@ namespace {
 		return v != 0 && v[0] != '\0' && !(v[0] == '0' && v[1] == '\0');
 	}
 
-	// NO_COLOR（デファクト標準）と TERM=dumb を尊重．判定は初回だけ
 	bool detectColor() {
 		if (envOn("NO_COLOR")) {
 			return false;
@@ -106,7 +98,6 @@ namespace {
 		return std::string(code) + s + RESET;
 	}
 
-	// 動的確保をしない時刻整形（OOM経路から呼ぶため char 配列に直接書く）
 	void stampInto(char* buf, std::size_t n) {
 		std::time_t now = std::time(0);
 		std::tm* tmv = std::localtime(&now);
@@ -130,8 +121,6 @@ namespace {
 		return r;
 	}
 
-	// ログ本文にはnick/QUIT理由など client 由来の文字列が入る．制御文字を落として
-	// 端末エスケープの注入（例 QUIT :<ESC>[2J）を防ぐ．0x80以上は UTF-8 としてそのまま通す
 	std::string sanitize(const std::string& s) {
 		std::string r;
 		r.reserve(s.size());
@@ -148,8 +137,6 @@ namespace {
 				+ "\n");
 	}
 
-	// 動的確保をしない emit。std::string を一切作らず、確保済み容量へ直接追記する。
-	// OOM ハンドラから呼ばれるので paint()/pad()/sanitize()/push() は使えない
 	void emitNoAlloc(const char* tag, const char* color, const char* a,
 			const char* b, const char* c) {
 		char ts[16];
@@ -198,7 +185,6 @@ unsigned long Log::droppedLines() {
 	return dropped();
 }
 
-// POLLOUT が立った時だけ呼ぶ．1回に LOG_CHUNK までしか書かないのでブロックしない．
 std::size_t Log::drainOnce() {
 	std::string& q = queue();
 	if (q.empty()) {
@@ -208,7 +194,6 @@ std::size_t Log::drainOnce() {
 	std::cout.write(q.data(), static_cast<std::streamsize>(n));
 	std::cout.flush();
 	if (!std::cout.good()) {
-		// 書けなかった分は捨てて進む（ログのために本業を止めない）
 		std::cout.clear();
 	}
 	q.erase(0, n);
@@ -273,8 +258,6 @@ void Log::deny(const std::string& text) {
 	emit("DENY", YELLOW, text);
 }
 
-// relay/trace は1メッセージ毎に出るので既定オフ。stdout はブロッキングなので、
-// 既定では悪意ある flood でログ量が無制限に増えないようにしておく
 void Log::relay(const std::string& text) {
 	if (traceEnabled()) {
 		emit("MSG", GRAY, text);
@@ -291,10 +274,8 @@ void Log::oomWarn(const char* what, const char* detail, const char* extra) {
 	try {
 		emitNoAlloc("WARN", YELLOW, what, detail, extra);
 	}
-	// メモリ不足の経路。ここで投げ返すと run() を抜けて main が終了してしまうので
-	// （要件: OOMでも落ちない・予期せず終了しない）意図的に握り潰す
-	// NOLINTNEXTLINE(bugprone-empty-catch)
 	catch (...) {
+		++dropped();
 	}
 }
 

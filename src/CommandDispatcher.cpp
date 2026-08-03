@@ -28,7 +28,6 @@
 #include "Who.hpp"
 
 namespace {
-	// IRC_TRACE=1 用の1行表記．PASS の引数はログに残さない
 	std::string traceLine(const Message& msg) {
 		std::string s = msg.command();
 		if (msg.command() == "PASS") {
@@ -43,8 +42,6 @@ namespace {
 
 CommandDispatcher::CommandDispatcher() {
 	try {
-		// コマンド担当がここで登録する
-		// 登録名は大文字（Message::parseがcommandを大文字化するため）
 		registerCommand("PASS", new PassCommand());
 		registerCommand("NICK", new NickCommand());
 		registerCommand("USER", new UserCommand());
@@ -62,7 +59,6 @@ CommandDispatcher::CommandDispatcher() {
 		registerCommand("WHO", new WhoCommand());
 	}
 	catch (...) {
-		// 構築途中はデストラクタが呼ばれないため、登録済み分を明示解放する。
 		clearCommands();
 		throw;
 	}
@@ -82,7 +78,6 @@ void CommandDispatcher::clearCommands() {
 
 void CommandDispatcher::registerCommand(const char* name,
 		ACommand* command) {
-	// nameのstd::string化やmapノード確保が失敗しても、新規commandを解放する。
 	try {
 		std::pair<std::map<std::string, ACommand*>::iterator, bool> inserted =
 				_table.insert(std::make_pair(std::string(name), command));
@@ -98,8 +93,6 @@ void CommandDispatcher::registerCommand(const char* name,
 
 void CommandDispatcher::dispatch(Server& server, Client& client,
 		const Message& msg) {
-	// 引数の組み立て自体を避けるため呼び出し側で閉じる（既定オフ）。ここは dispatch の
-	// try の外なので、確保を無条件に走らせると OOM 時に run() を抜けてしまう
 	if (Log::traceEnabled()) {
 		Log::trace(Log::who(client) + " > " + traceLine(msg));
 	}
@@ -124,8 +117,6 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		return;
 	}
 
-	// コマンドは検証失敗をIrcExceptionで投げる。ここで数値応答へ整形して返す。
-	// 想定外の例外もサーバは落とさない（要件N8）。
 	try {
 		command->execute(server, client, msg);
 	}
@@ -135,12 +126,9 @@ void CommandDispatcher::dispatch(Server& server, Client& client,
 		Log::deny(Log::who(client) + " " + msg.command() + " -> "
 				+ StringUtil::toString(e.code()) + " " + e.detail());
 	}
-	// OOMは run() 側で1クライアントを切って回復させるので、ここでは通さない
 	catch (const std::bad_alloc&) {
 		throw;
 	}
-	// 想定外の例外でもサーバは落とさない（要件N8）。応答は返さずログだけ残す。
-	// catch内で確保して投げ直すのを避けるため、確保しない oomWarn を使う
 	catch (const std::exception& e) {
 		Log::oomWarn("unexpected exception while handling",
 				msg.command().c_str(), e.what());

@@ -13,7 +13,6 @@
 
 namespace {
 
-// 中継の記録はメタ情報だけ（本文は残さない）
 std::string bytes(const std::string& line) {
     return StringUtil::toString(static_cast<long>(line.size())) + "B";
 }
@@ -36,7 +35,7 @@ void sendToChannel(Server& server, Client& client, const std::string& target,
         return;
     }
     channel->broadcast(line, &client);
-    if (Log::traceEnabled()) {  // 既定オフ。文字列の組み立てもしない
+    if (Log::traceEnabled()) {
         Log::relay("PRIVMSG " + client.nick() + " -> " + channel->name() + " " +
                    bytes(line) + " to " +
                    StringUtil::toString(
@@ -62,7 +61,7 @@ void sendToUser(Server& server, Client& client, const std::string& target,
     }
 }
 
-}  // namespace
+}
 
 void PrivmsgCommand::execute(Server& server, Client& client,
                              const Message& msg) {
@@ -83,9 +82,6 @@ void PrivmsgCommand::execute(Server& server, Client& client,
         if (target.empty()) {
             continue;
         }
-        // 宛先解決(findChannel/findClientByNick)と同じ casemapping で畳んで
-        // 重複判定する。単純なASCII大文字化では {}|^ を畳まず、#a{ と #a[ の
-        // ように ircCaseFold 上は同一に解決される宛先を別物と誤判定し二重配送になる。
         const std::string foldedTarget = StringUtil::ircCaseFold(target);
         if (!uniqueTargets.insert(foldedTarget).second) {
             server.sendLine(
