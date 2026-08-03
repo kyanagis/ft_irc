@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-# ircserv 結合スモークテスト（提出物のビルドとは独立・採点対象外）
-#
-# 検査内容:
-#   - N14 : 部分送信（1コマンドを複数パケットに分割）を1行に再構築して1応答を返す
-#   - N8  : 未知/不正コマンド連打・長すぎる行でもサーバが落ちない
-#   - RFC : CRLF終端、先頭空白拒否、RFC 2812 casemapping
-#   - 登録フロー(001 RPL_WELCOME) と登録系エラー(433/464/461)  ※IRC_TEST_REGISTRATION=1
-#   - 全コマンドの E2E（PRIVMSG/NOTICE/TOPIC/MODE/KICK/INVITE/PING/QUIT）
-#
-#   全コマンドのテストを先行実装するが、未実装コマンドで CI を落とさないための方式:
-#   各コマンドテストは実行前に capability probe を行う。Dispatcher は未登録コマンドに
-#   必ず `421 <CMD> :Unknown command` を返す（CommandDispatcher.cpp）。probe が 421 を
-#   見たら「未実装」と判断して fail ではなく skip する。コマンドが Dispatcher に結線
-#   された瞬間に自動で有効化され、以後はずっと回帰ガードとして走る。PR タイトルや
-#   環境変数には一切依存しない（push:[main] でも同じ挙動）。
-#
-# サニタイズ版サーバ（verify/ircserv_asan）を IRCSERV_BIN で指すと、ASan/UBSan 下で
-# 上記ワークロードを流し、動作中のメモリ破壊・未定義動作を検出する。
 
 import contextlib
 import os
@@ -28,10 +10,8 @@ import time
 HOST = "127.0.0.1"
 PASSWORD = "cipass"
 
-# サーバの stdout/stderr を退避するファイル（CI が失敗時にアーティファクト回収する）
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.log")
 
-# 既定は採点対象バイナリ。CI は IRCSERV_BIN=verify/ircserv_asan を渡してサニタイズ版を回す。
 SERVER_BIN = os.environ.get("IRCSERV_BIN", "./ircserv")
 
 _failures = []
@@ -39,22 +19,18 @@ _skipped = []
 _log_file = None
 _nick_seq = [0]
 
-
 def check(name, cond, detail=""):
     print(("  ok   " if cond else "  FAIL ") + name + ("" if cond else "  :: " + detail))
     if not cond:
         _failures.append(name)
 
-
 def skip(name, reason):
     print("  skip  " + name + "  :: " + reason)
     _skipped.append(name)
 
-
 def unique_nick():
     _nick_seq[0] += 1
     return ("u%d" % _nick_seq[0]).encode()
-
 
 def free_port():
     s = socket.socket()
@@ -63,17 +39,13 @@ def free_port():
     s.close()
     return port
 
-
 def _read_log():
     with contextlib.suppress(OSError):
         with open(LOG_PATH, "rb") as f:
             return f.read().decode(errors="replace")
     return ""
 
-
 def start_server(port):
-    # PIPE を read しないとバッファ詰まりで固まりうるので、常にファイルへ流す。
-    # 失敗時はこのファイルを CI がアップロードして原因追跡に使う。
     global _log_file
     _log_file = open(LOG_PATH, "wb")
     proc = subprocess.Popen(
@@ -91,7 +63,6 @@ def start_server(port):
         time.sleep(0.1)
     raise RuntimeError("server did not start listening")
 
-
 def recv_until_crlf(sock, timeout=2.0):
     sock.settimeout(timeout)
     buf = b""
@@ -103,9 +74,7 @@ def recv_until_crlf(sock, timeout=2.0):
             buf += chunk
     return buf
 
-
 def recv_until(sock, needle, timeout=2.0):
-    # needle が現れるまで（または timeout / EOF まで）読む。応答の特定行を待つのに使う。
     sock.settimeout(timeout)
     buf = b""
     with contextlib.suppress(socket.timeout):
@@ -116,9 +85,7 @@ def recv_until(sock, needle, timeout=2.0):
             buf += chunk
     return buf
 
-
 def register(port, nick=None, user=None):
-    # PASS+NICK+USER で登録を完了させ、ウェルカム(001-004)を読み切ってから返す。
     if nick is None:
         nick = unique_nick()
     if user is None:
@@ -130,13 +97,10 @@ def register(port, nick=None, user=None):
         + b"USER " + user + b" 0 * :Real " + nick + b"\r\n"
     )
     welcome = recv_until(s, b"004", timeout=3.0)
-    welcome += recv_until(s, b"\xff\xff", timeout=0.3)  # ウェルカム残りを掃き出す
+    welcome += recv_until(s, b"\xff\xff", timeout=0.3)
     return s, nick, welcome
 
-
 def implemented(port, cmd):
-    # Dispatcher が `421 <CMD>` を返さなければ「実装済み（結線済み）」と判断する。
-    # 未実装は 421 が即返るので速い。実装済みで無応答のコマンドは 1 秒だけ待つ。
     s, _, _ = register(port)
     s.sendall(cmd + b"\r\n")
     resp = recv_until(s, b"421", timeout=1.0)
@@ -144,11 +108,7 @@ def implemented(port, cmd):
         s.close()
     return not (b"421" in resp and cmd in resp)
 
-
-# ----------------------------------------------------------------- N14 / N8
-
 def test_partial_send(port):
-    # 'FOO\r\n' を3分割で送る → 再構築されて 421 が1回だけ返る（N14）
     s = socket.create_connection((HOST, port), timeout=2)
     for frag in (b"FO", b"O", b"\r\n"):
         s.sendall(frag)
@@ -161,9 +121,7 @@ def test_partial_send(port):
         repr(resp),
     )
 
-
 def test_no_crash(port):
-    # 不正/未知コマンド連打＋長すぎる行。落ちずに新規接続を受けられること（N8）
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(b"@@@\r\nNOPE x y\r\n" + b"A" * 2000 + b"\r\n")
     recv_until_crlf(s)
@@ -179,10 +137,7 @@ def test_no_crash(port):
         repr(resp),
     )
 
-
 def test_rfc_framing(port):
-    # RFC 2812 §2.3: bare LFはメッセージ終端ではなくprotocol error。
-    # 無言で落とすと素の nc で試した時に原因が分からないので、ERROR を返してから閉じる。
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(b"FOO\n")
     s.settimeout(2)
@@ -204,7 +159,6 @@ def test_rfc_framing(port):
         repr(data),
     )
 
-    # 行頭空白を持つ不正メッセージは実行せず、次の整形式行は通常処理する。
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(b"   FOO\r\nBAR\r\n")
     resp = recv_until(s, b"BAR", timeout=2)
@@ -215,9 +169,6 @@ def test_rfc_framing(port):
         repr(resp),
     )
 
-
-# ----------------------------------------------- 登録フロー（実装済み・回帰ガード）
-
 def test_registration(port):
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(b"PASS " + PASSWORD.encode() + b"\r\nNICK alice\r\nUSER a 0 * :Alice\r\n")
@@ -225,9 +176,8 @@ def test_registration(port):
     s.close()
     check("registration returns 001 RPL_WELCOME", b"001" in buf, repr(buf))
 
-
 def test_nick_in_use(port):
-    a, an, _ = register(port)                       # an を占有
+    a, an, _ = register(port)
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(b"PASS " + PASSWORD.encode() + b"\r\nNICK " + an + b"\r\n")
     r = recv_until(s, b"433", timeout=1.5)
@@ -235,9 +185,7 @@ def test_nick_in_use(port):
     s.close()
     a.close()
 
-
 def test_rfc_case_mapping(port):
-    # RFC 2812 §2.2では '[' と '{'（同様に ]/}, \\/|, ~/^）を同一視する。
     a, _, _ = register(port, nick=b"Map[")
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(
@@ -249,7 +197,6 @@ def test_rfc_case_mapping(port):
     s.close()
     a.close()
 
-
 def test_bad_pass(port):
     s = socket.create_connection((HOST, port), timeout=2)
     s.sendall(b"PASS wrongpass\r\nNICK zz\r\nUSER zz 0 * :z\r\n")
@@ -257,10 +204,7 @@ def test_bad_pass(port):
     check("wrong PASS -> 464", b"464" in r, repr(r))
     s.close()
 
-
 def test_bad_username(port):
-    # username に '@' があると prefix の user/host 境界が壊れる。461 で拒否し、
-    # 登録もさせない（001 が来ない）こと。正しい username で再送すれば通ること。
     s = socket.create_connection((HOST, port), timeout=2)
     nick = unique_nick()
     s.sendall(b"PASS " + PASSWORD.encode() + b"\r\nNICK " + nick
@@ -269,15 +213,12 @@ def test_bad_username(port):
     check("USER with '@' in username -> 461", b"461" in r, repr(r))
     check("USER with '@' in username does not register", b"001" not in r, repr(r))
 
-    # 同じ接続で正しい username を送れば登録できる（拒否は接続を殺さない）。
     s.sendall(b"USER good 0 * :x\r\n")
     r2 = recv_until(s, b"001", timeout=1.5)
     check("valid USER after rejection registers", b"001" in r2, repr(r2))
     s.close()
 
-
 def test_prefix_has_single_at(port):
-    # 配信される prefix が nick!user@host の形で '@' を1個だけ持つこと（#63 回帰）。
     a, an, _ = register(port)
     b, bn, _ = register(port)
     a.sendall(b"PRIVMSG " + bn + b" :hi-prefix\r\n")
@@ -289,24 +230,18 @@ def test_prefix_has_single_at(port):
     a.close()
     b.close()
 
-
 def test_not_enough_params(port):
-    # PART は実装済み。引数不足で 461 が返ることを確認（461 経路の回帰ガード）。
     s, _, _ = register(port)
     s.sendall(b"PART\r\n")
     r = recv_until(s, b"461", timeout=1.5)
     check("PART without params -> 461", b"461" in r, repr(r))
     s.close()
 
-
-# --------------------------------------- 全コマンド E2E（未実装は 421 検出で自動 skip）
-
 def test_privmsg(port):
     if not implemented(port, b"PRIVMSG"):
         return skip("PRIVMSG", "not implemented (Dispatcher returns 421)")
     a, an, _ = register(port)
     b, bn, _ = register(port)
-    # nick 宛: 宛先に届き、送信者には返らない
     a.sendall(b"PRIVMSG " + bn + b" :hi-nick\r\n")
     resp = recv_until(b, b"hi-nick")
     check("PRIVMSG nick delivered to target",
@@ -314,17 +249,15 @@ def test_privmsg(port):
           and (b":" + an + b"!") in resp, repr(resp))
     echo = recv_until(a, b"hi-nick", timeout=0.4)
     check("PRIVMSG not echoed back to sender", b"hi-nick" not in echo, repr(echo))
-    # channel 宛: メンバに届く
     a.sendall(b"JOIN #pm\r\n"); recv_until(a, b"366")
     b.sendall(b"JOIN #pm\r\n"); recv_until(b, b"366")
-    recv_until(a, b"JOIN", timeout=0.4)                 # bob の JOIN broadcast を掃き出す
+    recv_until(a, b"JOIN", timeout=0.4)
     a.sendall(b"PRIVMSG #pm :hi-chan\r\n")
     resp2 = recv_until(b, b"hi-chan")
     check("PRIVMSG channel delivered to member",
           b"PRIVMSG" in resp2 and b"#pm" in resp2 and b"hi-chan" in resp2, repr(resp2))
     a.close()
     b.close()
-
 
 def test_notice(port):
     if not implemented(port, b"NOTICE"):
@@ -336,13 +269,11 @@ def test_notice(port):
     check("NOTICE delivered to target",
           b"NOTICE" in resp and b"hey-notice" in resp and (b":" + an + b"!") in resp,
           repr(resp))
-    # 決定的な違い: 不明ターゲットでもエラー numeric を一切返さない（RFC 2812 §3.3.2）
     a.sendall(b"NOTICE nosuchnick_zzz :x\r\n")
     err = recv_until(a, b"401", timeout=0.5)
     check("NOTICE never returns error numeric", b"401" not in err, repr(err))
     a.close()
     b.close()
-
 
 def test_topic(port):
     if not implemented(port, b"TOPIC"):
@@ -362,7 +293,6 @@ def test_topic(port):
     check("TOPIC query after set -> 332", b"332" in q2 and b"hello world" in q2, repr(q2))
     a.close()
 
-
 def test_mode(port):
     if not implemented(port, b"MODE"):
         return skip("MODE", "not implemented (Dispatcher returns 421)")
@@ -379,7 +309,6 @@ def test_mode(port):
     r2 = recv_until(a, b"secretkey")
     check("MODE +k broadcast carries key", b"+k" in r2 and b"secretkey" in r2, repr(r2))
     a.close()
-
 
 def test_kick(port):
     if not implemented(port, b"KICK"):
@@ -399,7 +328,6 @@ def test_kick(port):
     a.close()
     b.close()
 
-
 def test_invite(port):
     if not implemented(port, b"INVITE"):
         return skip("INVITE", "not implemented (Dispatcher returns 421)")
@@ -416,7 +344,6 @@ def test_invite(port):
     a.close()
     b.close()
 
-
 def test_ping(port):
     if not implemented(port, b"PING"):
         return skip("PING", "not implemented (Dispatcher returns 421)")
@@ -425,7 +352,6 @@ def test_ping(port):
     r = recv_until(s, b"tok-12345")
     check("PING -> PONG carries the same token", b"PONG" in r and b"tok-12345" in r, repr(r))
     s.close()
-
 
 def test_quit(port):
     if not implemented(port, b"QUIT"):
@@ -443,11 +369,7 @@ def test_quit(port):
         a.close()
     b.close()
 
-
 def check_server_log(log):
-    # サーバ側ターミナル出力（起動バナー＋イベントログ）の回帰ガード。
-    # ここまでのテストが接続/登録/チャンネル生成/破棄/拒否を必ず踏んでいるので、
-    # 各カテゴリの行がログに現れることを機械検査する。
     check("startup banner printed",
           "ircserv 1.0" in log and "listening on 0.0.0.0:" in log,
           repr(log[:200]))
@@ -459,11 +381,8 @@ def check_server_log(log):
     check("log records rejected commands", "DENY" in log)
     check("log prints shutdown summary",
           "shutting down" in log and "uptime" in log)
-    # stdout はブロッキングなので、1メッセージ毎に出る高頻度ログ（MSG/RECV）は既定オフ。
-    # ここまでで PRIVMSG/NOTICE を何度も流しているので、出ていたら既定が壊れている。
     check("per-message logging stays off by default",
           "B to " not in log and "RECV" not in log)
-
 
 def main():
     port = free_port()
@@ -486,7 +405,6 @@ def main():
             print("  skip  registration flow "
                   "(PASS/NICK/USER 未実装: IRC_TEST_REGISTRATION=1 で有効化)")
 
-        # 全コマンド E2E。未実装のものは各関数内の probe で自動 skip される。
         test_privmsg(port)
         test_notice(port)
         test_topic(port)
@@ -496,12 +414,12 @@ def main():
         test_ping(port)
         test_quit(port)
     finally:
-        server_died_rc = proc.poll()      # テスト中に死んでいれば非 None（crash/サニタイザ abort）
-        proc.terminate()                  # SIGTERM → サーバは _running=0 で run() を抜け main を正常 return
+        server_died_rc = proc.poll()
+        proc.terminate()
         exit_rc = None
         with contextlib.suppress(Exception):
             exit_rc = proc.wait(timeout=5)
-        if exit_rc is None:               # 時間内に終了しない = clean shutdown 失敗。強制終了して記録
+        if exit_rc is None:
             with contextlib.suppress(Exception):
                 proc.kill()
                 proc.wait(timeout=3)
@@ -509,8 +427,6 @@ def main():
             with contextlib.suppress(Exception):
                 _log_file.close()
 
-    # サニタイザ検出: サーバがテスト中に異常終了 or ログにサニタイザ報告があれば失敗。
-    # 動作中の heap-overflow / use-after-free / UB は即 abort してここで赤になる。
     log = _read_log()
     markers = ("runtime error:", "AddressSanitizer",
                "UndefinedBehaviorSanitizer", "LeakSanitizer")
@@ -520,10 +436,6 @@ def main():
     hit = [m for m in markers if m in log]
     check("no sanitizer report in server log", not hit, "markers=%r" % hit)
 
-    # クリーン終了の検証: SIGTERM で run() を抜け main が 0 を返すこと。
-    # これが (1) leak 検出（LSan は正常終了時のみ動く）と
-    #        (2) サーバ側カバレッジ（profraw は正常終了時に書き出される）を有効化する。
-    # LSan が leak を報告すると exit_rc != 0 になり、このチェックが赤にする。
     check("server shuts down cleanly on SIGTERM (rc==0; enables LSan leak check + profraw)",
           exit_rc == 0, "exit_rc=%r" % exit_rc)
 
@@ -537,7 +449,6 @@ def main():
         print("server log -> " + LOG_PATH)
         sys.exit(1)
     print("integration OK")
-
 
 if __name__ == "__main__":
     main()

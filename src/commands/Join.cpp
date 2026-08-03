@@ -20,7 +20,6 @@ namespace {
 				client.nick(), detail));
 	}
 
-	// "3 members" のような人数表記
 	std::string memberCountText(const Channel& channel) {
 		return StringUtil::toString(static_cast<long>(channel.memberCount()))
 				+ (channel.memberCount() == 1 ? " member" : " members");
@@ -68,12 +67,10 @@ namespace {
 		return true;
 	}
 
-	// RPL_NAMREPLY(353) を、各 numeric 行が512(CRLF含む)以下に収まるよう複数の detail に分割する。
-	// 1行に全員詰めると多人数チャンネルで512超→末尾が切れてメンバーが欠落するため。
 	std::vector<std::string> buildNameReplies(Server& server, Client& client,
 			Channel& channel) {
 		const std::string head = "= " + channel.name() + " :";
-		const std::string::size_type lineMax = 510;  // 512 - CRLF
+		const std::string::size_type lineMax = 510;
 		const std::string::size_type overhead = Reply::numeric(
 				server.serverName(), Reply::RPL_NAMREPLY, client.nick(), head).size();
 		const std::string::size_type budget = (lineMax > overhead) ? lineMax - overhead : 1;
@@ -131,7 +128,6 @@ namespace {
 
 		Channel* channel = server.findChannel(name);
 		if (channel == 0) {
-			// 新規作成: コンストラクタが作成者を member+operator に登録する。
 			Channel* created = server.getOrCreateChannel(name, client);
 			sendJoinReplies(server, client, *created);
 			Log::memb("> " + client.nick() + " joined " + created->name()
@@ -140,7 +136,7 @@ namespace {
 		}
 
 		if (channel->hasMember(client)) {
-			return;   // 既メンバは無視（RFC 2812 §3.2.1）
+			return;
 		}
 		if (!canJoin(server, client, *channel, key)) {
 			return;

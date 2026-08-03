@@ -6,7 +6,6 @@
 #include "Reply.hpp"
 #include "Server.hpp"
 
-// PASS は登録の一部なので登録前に受け付ける（NICK/USER より先に来る）。
 bool PassCommand::needsRegistration() const {
 	return false;
 }
@@ -24,7 +23,6 @@ void PassCommand::execute(Server& server, Client& client, const Message& msg) {
 		throw IrcException(Reply::ERR_PASSWDMISMATCH, client.nick(),
 				":Password incorrect");
 	}
-	// Client は passwd を保持せず acceptPass() のboolのみ。ここで照合して立てる。
 	client.acceptPass();
 	server.completeRegistration(client);
 }

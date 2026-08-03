@@ -42,7 +42,6 @@ namespace {
 
 		channel->broadcast(line);
 		channel->removeMember(client);
-		// removeEmptyChannel が channel を消しうるので、その前にログを出す
 		Log::memb("< " + client.nick() + " left " + channel->name()
 				+ (appendReason ? " (" + reason + ")" : std::string())
 				+ ", " + StringUtil::toString(

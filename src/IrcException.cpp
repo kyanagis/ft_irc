@@ -1,6 +1,5 @@
 #include "IrcException.hpp"
 
-// what()は使わずcode/target/detailで数値応答を組み立てるので、baseには識別用の文字列だけ渡す
 IrcException::IrcException(int code, const std::string& target,
 		const std::string& detail)
 		: std::runtime_error(detail),

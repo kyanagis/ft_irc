@@ -9,7 +9,6 @@ std::string Reply::numeric(const std::string& server, int code,
 	oss << ':' << server << ' '
 			<< std::setw(3) << std::setfill('0') << code << ' ';
 	if (target.empty()) {
-		// 登録前でnick未確定のクライアント宛はRFC慣例の"*"
 		oss << '*';
 	} else {
 		oss << target;

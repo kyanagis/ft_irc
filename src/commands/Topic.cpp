@@ -17,7 +17,6 @@ namespace {
 				client.nick(), detail));
 	}
 
-	// ログ用にトピックを短く切る（長文で1行が流れるのを防ぐ）
 	std::string preview(const std::string& s) {
 		if (s.size() <= 60) {
 			return s;

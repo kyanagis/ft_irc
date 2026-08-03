@@ -24,13 +24,12 @@ namespace {
 	const std::size_t READ_CHUNK = 4096;
 	const std::string IRC_CRLF = "\r\n";
 	const std::string SERVER_VERSION = "1.0";
-	const int POLL_TIMEOUT_MS = 1000;       // 掃引を回すためpollは有限待ち
-	const std::time_t REG_TIMEOUT_SEC = 60;  // connectからこの秒数で登録未完なら切断
-	const std::time_t CLOSE_TIMEOUT_SEC = 10;  // 猶予切断のflushがこの秒数で終わらなければ強制finalize
+	const int POLL_TIMEOUT_MS = 1000;
+	const std::time_t REG_TIMEOUT_SEC = 60;
+	const std::time_t CLOSE_TIMEOUT_SEC = 10;
 	const int MAX_ACCEPT = 16;
-	const std::time_t LOG_DRAIN_SEC = 2;    // 終了時に残ログを吐くのに使う上限秒数
+	const std::time_t LOG_DRAIN_SEC = 2;
 
-	// ログ用の稼働時間表記（1h2m3s / 2m3s / 3s）
 	std::string formatDuration(std::time_t sec) {
 		if (sec < 0) {
 			sec = 0;
@@ -48,7 +47,6 @@ namespace {
 		return r + StringUtil::toString(total) + "s";
 	}
 
-	// reason を §2.3.1（NUL/CR/LF不可）で無害化し，§2.3（≤512, CRLF含む）に収めた ERROR 行を作る
 	std::string buildErrorLine(const std::string& host, const std::string& reason) {
 		std::string safe;
 		safe.reserve(reason.size());
@@ -59,7 +57,7 @@ namespace {
 			}
 		}
 		std::string line = "ERROR :Closing Link: " + host + " (" + safe + ")";
-		if (line.size() > 510) {  // 510 = 512 - CRLF
+		if (line.size() > 510) {
 			line.erase(510);
 		}
 		line += IRC_CRLF;
@@ -158,7 +156,7 @@ void Server::removeEmptyChannel(Channel* channel) {
 	if (channel == 0 || !channel->isEmpty()) {
 		return;
 	}
-	const std::string name = channel->name();   // delete後に使うのでコピー
+	const std::string name = channel->name();
 	_channels.erase(StringUtil::ircCaseFold(name));
 	delete channel;
 	Log::chan("# " + name + " destroyed, last member left (channels: "
@@ -186,7 +184,6 @@ void Server::setup() {
 	_listen.openListen(_port);
 }
 
-// 起動バナー＋設定パネル．listen 成功後に呼ぶ（失敗時は Fatal だけ出す）
 void Server::logStartup() const {
 	Log::banner(_serverName, SERVER_VERSION);
 	Log::field("port", StringUtil::toString(_port));
@@ -213,7 +210,6 @@ void Server::logShutdown() const {
 			+ " (peak " + StringUtil::toString(static_cast<long>(_peakClients))
 			+ " at once)  open channels "
 			+ StringUtil::toString(static_cast<long>(_channels.size())));
-	// 読み手が詰まってキューが溢れた分は捨てている。黙って消すと欠落に気付けない
 	if (Log::droppedLines() > 0) {
 		Log::warn("dropped " + StringUtil::toString(
 				static_cast<long>(Log::droppedLines()))
@@ -232,8 +228,6 @@ void Server::rebuildPollFds() {
 	listenPfd.revents = 0;
 	_pollfds.push_back(listenPfd);
 
-	// stdout も同じpollで扱う（要件 N11）．直接writeするとパイプ/端末の読み手が
-	// 止まった時にブロックし，イベントループごと停止するため．積まれた時だけ監視する
 	if (Log::hasPending()) {
 		struct pollfd logPfd;
 		logPfd.fd = STDOUT_FILENO;
@@ -258,8 +252,6 @@ void Server::rebuildPollFds() {
 	}
 }
 
-// poll1周ごとに全クライアントを掃引．出力上限超過（#43）と未登録タイムアウト（#44）を切断．
-// POLLINが来ない純受信クライアントもここで確実に掃引される．
 void Server::sweepClients() {
 	std::time_t now = std::time(0);
 	std::vector<int> overflow;
@@ -269,7 +261,6 @@ void Server::sweepClients() {
 			it != _clients.end(); ++it) {
 		Client* client = it->second;
 		if (client->isReadClosed()) {
-			// 猶予切断中: flushがCLOSE_TIMEOUT_SECで終わらなければ強制finalize（リンガーfd有界化）
 			if (now - client->closingSince() >= CLOSE_TIMEOUT_SEC) {
 				staleClose.push_back(it->first);
 			}
@@ -282,7 +273,6 @@ void Server::sweepClients() {
 			regTimeout.push_back(it->first);
 		}
 	}
-	// disconnectは_clientsを変更するので走査後にまとめて実施
 	for (std::size_t i = 0; i < overflow.size(); ++i) {
 		std::map<int, Client*>::iterator it = _clients.find(overflow[i]);
 		if (it != _clients.end()) {
@@ -295,7 +285,6 @@ void Server::sweepClients() {
 			gracefulClose(*it->second, "registration timeout");
 		}
 	}
-	// flushできずに居座る猶予切断中クライアントを強制切断（disconnectは未通知のEOFにも対応）
 	for (std::size_t i = 0; i < staleClose.size(); ++i) {
 		std::map<int, Client*>::iterator it = _clients.find(staleClose[i]);
 		if (it != _clients.end()) {
@@ -306,7 +295,7 @@ void Server::sweepClients() {
 
 void Server::run() {
 	setup();
-	Log::reserve();   // ログキューの容量を先に取る（OOM経路で再確保しないため）
+	Log::reserve();
 	_running = 1;
 
 	std::signal(SIGINT, Server::requestStop);
@@ -315,8 +304,6 @@ void Server::run() {
 
 	logStartup();
 
-	// 停止要求後も残ログを吐き切るまで同じループを回す（別pollを持たないため）。
-	// 読み手が止まっていると吐き切れないので LOG_DRAIN_SEC で打ち切る。
 	bool stopping = false;
 	std::time_t drainDeadline = 0;
 
@@ -330,10 +317,6 @@ void Server::run() {
 				&& (!Log::hasPending() || std::time(0) >= drainDeadline)) {
 			break;
 		}
-		// メモリ枯渇(bad_alloc)でプロセスを落とさない（subject: OOMでも予期せぬ終了は不可）。
-		// 1周分の割当(pollfd構築/accept/per-client/sweep)をまとめて守り，枯渇した周は捨てて
-		// 次周で再試行する。poll失敗のruntime_errorはbad_allocでないのでここは素通りし，
-		// 意図通り致命になる。per-client処理は内側tryで個別にdropして周内の他fdへ影響させない。
 		try {
 			rebuildPollFds();
 
@@ -365,7 +348,6 @@ void Server::run() {
 					continue;
 				}
 
-				// stdout: 書ける時だけ1チャンク吐く。書けなくても本業は止めない
 				if (fd == STDOUT_FILENO) {
 					if (re & POLLOUT) {
 						Log::drainOnce();
@@ -398,9 +380,6 @@ void Server::run() {
 						}
 					}
 					if (re & (POLLERR | POLLHUP | POLLNVAL)) {
-						// POLLHUPはeventsの指定に関係なく繰り返し返る。保留出力を
-						// 待って無視するとclose timeoutまでbusy loopになるため、
-						// この周のPOLLOUT送信を一度試した後は即時切断する。
 						it = _clients.find(fd);
 						if (it != _clients.end()) {
 							disconnect(*it->second, "poll error/hangup");
@@ -408,10 +387,6 @@ void Server::run() {
 					}
 				}
 				catch (const std::bad_alloc&) {
-					// このクライアント処理中にメモリ枯渇。該当clientをdropしてバッファを
-					// 解放し継続する（disconnectはannounceQuitのbroadcastでbad_allocを
-					// 再throwし得るので使わず，nothrowなdropQuietlyで落とす）。
-					// disconnect途中でthrowしていてもfindで残存を確認してから処理する。
 					std::map<int, Client*>::iterator jt = _clients.find(fd);
 					if (jt != _clients.end()) {
 						dropQuietly(*jt->second);
@@ -441,12 +416,11 @@ void Server::acceptClient() {
 		Client* client = 0;
 		try {
 			client = new Client(fd, host);
-			_clients[fd] = client;  // map挿入もtry内: bad_allocでもfd/clientを漏らさない
+			_clients[fd] = client;
 		}
 		catch (...) {
 			close(fd);
-			delete client;  // new成功後にinsertが投げた時のみ非0。new失敗時は0でdelete安全
-			// ここはメモリ不足の経路。通常ログは std::string を組むので使えない
+			delete client;
 			Log::oomWarn("dropped a connection: client allocation failed");
 			continue;
 		}
@@ -469,9 +443,6 @@ void Server::handleReadable(int fd) {
 	Client& client = *it->second;
 	char buf[READ_CHUNK];
 
-	// POLLIN 1回につき recv も1回だけ（要件 N11: pollを通さないI/Oを行わない）。
-	// level-triggeredなので読み残しは次周も POLLIN になる。1回に制限することで
-	// 送り続ける1クライアントが他fdをstarveさせることも同時に防げる。
 	ssize_t n = recv(client.fd(), buf, sizeof(buf), 0);
 	int recvErrno = (n < 0) ? errno : 0;
 	if (n > 0) {
@@ -484,13 +455,10 @@ void Server::handleReadable(int fd) {
 		return;
 	}
 	Client& current = *it->second;
-	// QUIT等で猶予切断が始まったら，残りの入力/EOF処理はせず flush→finalize に任せる
 	if (current.isReadClosed()) {
 		return;
 	}
 
-	// CRLF違反と同じ §2.3 違反なので扱いも揃える: 理由を ERROR で伝えてから閉じる。
-	// 無言で落とすとクライアント側に原因が残らない。
 	if (current.inputOverflow()) {
 		gracefulClose(current,
 				"input line too long "
@@ -532,7 +500,6 @@ void Server::handleWritable(int fd) {
 			&& errno != EINTR) {
 		disconnect(client, "send error");
 	}
-	// EAGAIN/EWOULDBLOCK/EINTR と n==0 はバッファ保持で次の POLLOUT に回す
 }
 
 void Server::pumpLines(int fd) {
@@ -547,8 +514,6 @@ void Server::pumpLines(int fd) {
 			return;
 		}
 		if (client.inputProtocolError()) {
-			// RFC 2812 §2.3 違反（CRLF終端でない・512超・NUL/CR混入）。
-			// 無言で落とすと原因が分からないので ERROR を返してから閉じる
 			gracefulClose(client,
 					"invalid message format or line too long "
 					"(RFC 2812: messages must be CR-LF terminated, <=512 octets)");
@@ -559,26 +524,21 @@ void Server::pumpLines(int fd) {
 			continue;
 		}
 		_dispatcher.dispatch(*this, client, msg);
-		// dispatch中にQUIT等で切断済みならclientは解放されている
 		it = _clients.find(fd);
 		if (it == _clients.end()) {
 			return;
 		}
-		// QUIT等で猶予切断が始まったら，同パケットの後続行は処理しない
 		if (it->second->isReadClosed()) {
 			return;
 		}
 	}
 }
 
-// 1行をCRLF終端で送信キューへ積む。コマンドからの送信は必ずこれを通す
 void Server::sendLine(Client& client, const std::string& line) {
 	std::string queued = StringUtil::capLine(line) + IRC_CRLF;
 	client.appendOutput(queued);
 }
 
-// PASS/NICK/USER が処理後に呼ぶ共通ロジック。pass/nick/user が揃うまでは何もしない。
-// 揃った瞬間に登録完了扱いにしてウェルカム001-004を順に送る（多重送出は !isRegistered で防止）。
 void Server::completeRegistration(Client& client) {
 	if (client.isRegistered() || !client.passAccepted()
 			|| !client.hasNick() || !client.hasUser()) {
@@ -601,26 +561,22 @@ void Server::completeRegistration(Client& client) {
 			name + " " + SERVER_VERSION + " - itkol"));
 }
 
-// 共有チャンネルを持つ各クライアントへ QUIT を1回だけ通知し，全チャンネルから除去する（本人は除外）。
 void Server::announceQuit(Client& client, const std::string& reason) {
 	const std::string quitLine =
 			Reply::from(client.prefix(), "QUIT :" + reason);
 
 	std::set<Client*> recipients;
 
-	// 参加中だけでなく invited のみのチャンネルにも生ポインタが残るため全チャンネルを走査し removeMember する
 	std::map<std::string, Channel*>::iterator it = _channels.begin();
 	while (it != _channels.end()) {
 		Channel* channel = it->second;
-		// removeMember 前に収集する。removeMember 後は hasMember(client) が必ず偽になり，
-		// そのチャンネルを配送対象と判定できなくなるため（単独メンバーなら空削除もされる）。
 		if (channel->hasMember(client)) {
 			const std::set<Client*>& mem = channel->members();
 			recipients.insert(mem.begin(), mem.end());
 		}
 		channel->removeMember(client);
 		if (channel->isEmpty()) {
-			const std::string name = channel->name();   // delete後に使うのでコピー
+			const std::string name = channel->name();
 			delete channel;
 			_channels.erase(it++);
 			Log::chan("# " + name + " destroyed, last member left (channels: "
@@ -631,17 +587,14 @@ void Server::announceQuit(Client& client, const std::string& reason) {
 		}
 	}
 
-	// 本人は QUIT を受け取らない（本人へは別途 ERROR を送る）。集合構築後に1回除外。
 	recipients.erase(&client);
 
-	// 共有チャンネルを持つ各相手へちょうど1回。sendLine は broadcast と同一バイト列を積む。
 	for (std::set<Client*>::iterator r = recipients.begin();
 			r != recipients.end(); ++r) {
 		sendLine(**r, quitLine);
 	}
 }
 
-// fdをpollから外して実際に閉じ，Clientを破棄する。以降そのfdは _clients に無い。
 void Server::finalize(Client& client) {
 	int fd = client.fd();
 	_clients.erase(fd);
@@ -649,10 +602,6 @@ void Server::finalize(Client& client) {
 	delete &client;
 }
 
-// メモリ枯渇時などの緊急切断用。QUIT通知(broadcastは再割当でbad_allocを再throwし得る)を
-// 出さず，全チャンネルから除去してからfinalizeする。removeMember/erase/close/deleteは
-// いずれも割当を伴わないので本関数はnothrow。単なるfinalizeだけだとChannelに生ポインタが
-// 残りUAFになるため，チャンネル除去を必ず先に行う。
 void Server::dropQuietly(Client& client) {
 	std::map<std::string, Channel*>::iterator it = _channels.begin();
 	while (it != _channels.end()) {
@@ -665,22 +614,18 @@ void Server::dropQuietly(Client& client) {
 			++it;
 		}
 	}
-	// ここもメモリ不足の経路。確保しない oomWarn 以外は使わない
 	Log::oomWarn("dropped a client to recover memory:", client.host().c_str());
 	finalize(client);
 }
 
-// 即時切断。ソケットが死んでいる/送信バッファ満杯でERRORを送れない経路用（ERRORは付けない）。
 void Server::disconnect(Client& client, const std::string& reason) {
-	const std::string label = Log::who(client);   // finalize後は client が無いので先に取る
+	const std::string label = Log::who(client);
 	announceQuit(client, reason);
 	finalize(client);
 	Log::conn("- " + label + " disconnected: " + reason + " (clients: "
 			+ StringUtil::toString(static_cast<long>(_clients.size())) + ")");
 }
 
-// 猶予切断: RFC2812 §3.7.4/§3.1.7 の ERROR を _outBuf に積み，POLLOUT で送り切ってから
-// finalize する（N11: 送信は必ずPOLLOUT経由）。読みは止める。QUIT・登録タイムアウト用。
 void Server::gracefulClose(Client& client, const std::string& reason) {
 	announceQuit(client, reason);
 	client.appendOutput(buildErrorLine(client.host(), reason));

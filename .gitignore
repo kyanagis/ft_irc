@@ -17,16 +17,13 @@ __pycache__/
 .vscode/
 .idea/
 
-# clangd / editor (local only, keep the dev push to source files)
 compile_flags.txt
 .cache/
 
 compile_commands.json
 
-# ローカル専用の設計ドキュメント（push しない）
 docs/
 
-# 検証ハーネス：ソース/種コーパスは追跡（CIで実行）、ビルド成果物のみ除外
 verify/verify
 verify/verify_cov
 verify/oom
@@ -39,9 +36,7 @@ verify/*.dSYM/
 
 .clang-format
 verify/server.log
-# カバレッジ export（CI が生成・失敗時のみアーティファクト回収）
 verify/cov*.json
-# libFuzzer が実行時に落とす再現物（CIはアーティファクトで回収、リポには入れない）
 verify/crash-*
 verify/oom-*
 verify/timeout-*
@@ -50,8 +45,6 @@ verify/slow-unit-*
 
 .clang-format
 
-# direnv のローカルキャッシュ
 .direnv/
 
-# ファザーのコーパス（生成物・提出物ではない）
 verify/corpus/
