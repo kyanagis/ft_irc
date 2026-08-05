@@ -1,8 +1,0 @@
-Checks: >
-  -*,
-  clang-analyzer-*,
-  bugprone-*,
-  -bugprone-easily-swappable-parameters,
-  -bugprone-signal-handler,
-  portability-*
-WarningsAsErrors: '*'
