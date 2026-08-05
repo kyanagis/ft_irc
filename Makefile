@@ -7,9 +7,43 @@ INCLUDES  := -I include -I include/commands
 
 SRCDIR    := src
 OBJDIR    := obj
-SRCS      := $(sort $(wildcard $(SRCDIR)/*.cpp) $(wildcard $(SRCDIR)/*/*.cpp))
 
-OBJS      := $(SRCS:$(SRCDIR)/%.cpp=$(OBJDIR)/%.o)
+FILES     := main \
+             Server \
+             Socket \
+             Client \
+             Message \
+             Reply \
+             StringUtil \
+             IrcException \
+             Log \
+             ACommand \
+             CommandDispatcher \
+             Channel/Channel \
+             Channel/Channel_members \
+             Channel/Channel_operator \
+             Channel/Channel_invite \
+             Channel/Channel_topic \
+             Channel/Channel_mode \
+             Channel/Channel_broadcast \
+             commands/Pass \
+             commands/Nick \
+             commands/User \
+             commands/Cap \
+             commands/Quit \
+             commands/Ping \
+             commands/Join \
+             commands/Part \
+             commands/Privmsg \
+             commands/Notice \
+             commands/Topic \
+             commands/Kick \
+             commands/Invite \
+             commands/Mode \
+             commands/Who
+
+SRCS      := $(FILES:%=$(SRCDIR)/%.cpp)
+OBJS      := $(FILES:%=$(OBJDIR)/%.o)
 DEPS      := $(OBJS:.o=.d)
 
 all: $(NAME)
