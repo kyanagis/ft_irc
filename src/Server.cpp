@@ -438,12 +438,15 @@ void Server::handleReadable(int fd) {
 	char buf[READ_CHUNK];
 
 	ssize_t n = recv(client.fd(), buf, sizeof(buf), 0);
-	int recvErrno = (n < 0) ? errno : 0;
+	if (n < 0) {
+		disconnect(client, "recv error");
+		return;
+	}
 	if (n > 0) {
 		client.appendInput(buf, static_cast<std::size_t>(n));
+		pumpLines(fd);
 	}
 
-	pumpLines(fd);
 	it = _clients.find(fd);
 	if (it == _clients.end()) {
 		return;
@@ -470,9 +473,6 @@ void Server::handleReadable(int fd) {
 		} else {
 			disconnect(current, "client closed connection");
 		}
-	} else if (n < 0 && recvErrno != EAGAIN && recvErrno != EWOULDBLOCK
-			&& recvErrno != EINTR) {
-		disconnect(current, "recv error");
 	}
 }
 
@@ -488,12 +488,11 @@ void Server::handleWritable(int fd) {
 	}
 
 	ssize_t n = send(client.fd(), out.c_str(), out.size(), 0);
-	if (n > 0) {
-		out.erase(0, static_cast<std::size_t>(n));
-	} else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK
-			&& errno != EINTR) {
+	if (n <= 0) {
 		disconnect(client, "send error");
+		return;
 	}
+	out.erase(0, static_cast<std::size_t>(n));
 }
 
 void Server::pumpLines(int fd) {
