@@ -27,7 +27,6 @@ namespace {
 	const int POLL_TIMEOUT_MS = 1000;
 	const std::time_t REG_TIMEOUT_SEC = 60;
 	const std::time_t CLOSE_TIMEOUT_SEC = 10;
-	const int MAX_ACCEPT = 16;
 	const std::time_t LOG_DRAIN_SEC = 2;
 
 	std::string formatDuration(std::time_t sec) {
@@ -191,8 +190,7 @@ void Server::logStartup() const {
 			+ StringUtil::toString(static_cast<long>(_password.size()))
 			+ " chars)");
 	Log::field("started", _createdAt);
-	Log::field("limits", "accept "
-			+ StringUtil::toString(MAX_ACCEPT) + "/loop  reg timeout "
+	Log::field("limits", std::string("accept 1/poll-ready event  reg timeout ")
 			+ StringUtil::toString(static_cast<long>(REG_TIMEOUT_SEC))
 			+ "s  poll " + StringUtil::toString(POLL_TIMEOUT_MS) + "ms");
 	Log::field("log", std::string("per-message trace ")
@@ -407,32 +405,28 @@ void Server::run() {
 
 void Server::acceptClient() {
 	std::string host;
-	int accepted = 0;
-	while (accepted < MAX_ACCEPT) {
-		int fd = _listen.acceptClient(host);
-		if (fd < 0) {
-			break;
-		}
-		Client* client = 0;
-		try {
-			client = new Client(fd, host);
-			_clients[fd] = client;
-		}
-		catch (...) {
-			close(fd);
-			delete client;
-			Log::oomWarn("dropped a connection: client allocation failed");
-			continue;
-		}
-		accepted++;
-		++_totalConnections;
-		if (_clients.size() > _peakClients) {
-			_peakClients = _clients.size();
-		}
-		Log::conn("+ " + host + " fd " + StringUtil::toString(fd)
-				+ " (clients: " + StringUtil::toString(
-						static_cast<long>(_clients.size())) + ")");
+	int fd = _listen.acceptClient(host);
+	if (fd < 0) {
+		return;
 	}
+	Client* client = 0;
+	try {
+		client = new Client(fd, host);
+		_clients[fd] = client;
+	}
+	catch (...) {
+		close(fd);
+		delete client;
+		Log::oomWarn("dropped a connection: client allocation failed");
+		return;
+	}
+	++_totalConnections;
+	if (_clients.size() > _peakClients) {
+		_peakClients = _clients.size();
+	}
+	Log::conn("+ " + host + " fd " + StringUtil::toString(fd)
+			+ " (clients: " + StringUtil::toString(
+					static_cast<long>(_clients.size())) + ")");
 }
 
 void Server::handleReadable(int fd) {
@@ -444,12 +438,15 @@ void Server::handleReadable(int fd) {
 	char buf[READ_CHUNK];
 
 	ssize_t n = recv(client.fd(), buf, sizeof(buf), 0);
-	int recvErrno = (n < 0) ? errno : 0;
+	if (n < 0) {
+		disconnect(client, "recv error");
+		return;
+	}
 	if (n > 0) {
 		client.appendInput(buf, static_cast<std::size_t>(n));
+		pumpLines(fd);
 	}
 
-	pumpLines(fd);
 	it = _clients.find(fd);
 	if (it == _clients.end()) {
 		return;
@@ -476,9 +473,6 @@ void Server::handleReadable(int fd) {
 		} else {
 			disconnect(current, "client closed connection");
 		}
-	} else if (n < 0 && recvErrno != EAGAIN && recvErrno != EWOULDBLOCK
-			&& recvErrno != EINTR) {
-		disconnect(current, "recv error");
 	}
 }
 
@@ -494,12 +488,11 @@ void Server::handleWritable(int fd) {
 	}
 
 	ssize_t n = send(client.fd(), out.c_str(), out.size(), 0);
-	if (n > 0) {
-		out.erase(0, static_cast<std::size_t>(n));
-	} else if (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK
-			&& errno != EINTR) {
+	if (n <= 0) {
 		disconnect(client, "send error");
+		return;
 	}
+	out.erase(0, static_cast<std::size_t>(n));
 }
 
 void Server::pumpLines(int fd) {

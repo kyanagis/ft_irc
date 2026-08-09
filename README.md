@@ -193,7 +193,7 @@ modes are outside the subject and are ignored.
 main ── Server::run()
          │  poll()  ← the only multiplexing point in the project
          │
-         ├─ listen fd  POLLIN  ─▶ accept() (up to 16 per loop) + O_NONBLOCK
+         ├─ listen fd  POLLIN  ─▶ accept() (one per poll-ready event) + O_NONBLOCK
          ├─ client fd  POLLIN  ─▶ recv() ─▶ input buffer
          │                          └─ split on CR-LF ─▶ Message::parse
          │                               └─ CommandDispatcher ─▶ ACommand::execute
